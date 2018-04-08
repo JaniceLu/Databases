@@ -348,11 +348,12 @@ int do_semantic(token_list *tok_list)
 		cur = cur->next->next; /*moves pointer to potential table name*/
 	}
 	else if ((cur->tok_value == K_SELECT) &&
-					(cur->next != NULL) && (cur->next->tok_value == S_STAR))
+					(cur->next != NULL) && (cur->next->tok_value == S_STAR)
+					&& cur->next->next->tok_value == K_FROM)
 	{
 		printf("SELECT * statement\n");
 		cur_cmd = SELECT;
-		cur = cur->next->next; /*moves pointer to 'from' keyword*/
+		cur = cur->next->next->next; /*moves pointer to table keyword*/
 	}
 	else
   	{
@@ -531,8 +532,7 @@ int sem_create_table(token_list *t_list)
 												{	
  													column_done = true;
 												}
-												record_size += sizeof(int) + 1;
-												printf("record_size: %d\n", record_size);	
+												record_size += sizeof(int) + 1;	
 												cur = cur->next;
 											}
 										}
@@ -608,7 +608,6 @@ int sem_create_table(token_list *t_list)
 																column_done = true;
 															}
 															record_size += col_entry[cur_id].col_len + 1;
-															printf("record_size: %d\n", record_size);
 															cur = cur->next;
 														}
 													}
@@ -662,23 +661,14 @@ int sem_create_table(token_list *t_list)
 						int file_size = 24, offset = 24;
 						int number_records = 0, dummy = 0;
 						void *position = NULL;
-						printf("columns: %d\n", columns);
 						/*getting table name into char* format */
-						printf("table name: %s\n", tab_entry.table_name);
 						char* extensionName = ".tab";
 						char* addTableName = (char*)malloc(strlen(tab_entry.table_name) + strlen(extensionName) + 1);
 						strcat(addTableName, tab_entry.table_name);
 						strcat(addTableName, extensionName);
-						printf("New file name will be: %s\n", addTableName);
 
-
-						/*obtain record size for file*/	
-						printf("record_size before round up: %d\n", record_size);
+						/*obtain record size for file*/
 						record_size = roundUp(record_size, 4);
-						printf("record_size: %d\n", record_size);
-						printf("number of records: %d\n", number_records);
-						printf("offset: %d bytes\n", offset);
-						printf("flags: %d\n", tab_entry.tpd_flags);
 
 						std::ofstream outputFile(addTableName); /*create file with table name*/
 						FILE *fhandle = NULL;
@@ -717,7 +707,7 @@ int sem_create_table(token_list *t_list)
 int sem_insert_into(token_list *t_list)
 {
 	int zero = 0, counter = 0, i;
-	int rc = 0, record_size = 0, not_null = 0, file_size = 0;
+	int rc = 0, record_size = 0, column_not_null = 0, file_size = 0;
 	int integer_size = 4, rows_inserted = 4;
 	int column_type, column_length, input_length, input;
 	char *input_string = NULL;
@@ -745,12 +735,10 @@ int sem_insert_into(token_list *t_list)
 	}
 	else
 	{
-		printf("table name: %s\n", tab_entry->table_name);
 		char* extensionName = ".tab";
 		char* addTableName = (char*)malloc(strlen(tab_entry->table_name) + strlen(extensionName) + 1);
 		strcat(addTableName, tab_entry->table_name);
 		strcat(addTableName, extensionName);
-		printf("New file name will be: %s\n", addTableName);
 
 		if((fhandle = fopen(addTableName, "abc")) == NULL)
 		{
@@ -775,17 +763,17 @@ int sem_insert_into(token_list *t_list)
 			fread(&file_size, sizeof(int), 1, flook);
 			fflush(flook);
 			fclose(flook);
-			printf("File size is: %d\n", file_size);
-			printf("Record size is: %d\n", record_size);
+
 			test = test->next;
 			cur = cur->next; //now onto VALUES
 			if(cur->tok_value != K_VALUES)
 			{
 				//ERROR
-				rc = INVALID_INSERT_STATEMENT;
+				rc = INVALID_STATEMENT;
 				done = true;
 				test->tok_value = INVALID;
 				cur->tok_value = INVALID;
+				printf("values keyword missing");
 			}
 			else
 			{
@@ -794,7 +782,7 @@ int sem_insert_into(token_list *t_list)
 				if(cur->tok_value != S_LEFT_PAREN)
 				{
 					//ERROR
-					rc = INVALID_INSERT_STATEMENT;
+					rc = INVALID_STATEMENT;
 					done = true;
 					test->tok_value = INVALID;
 					cur->tok_value = INVALID;
@@ -802,15 +790,15 @@ int sem_insert_into(token_list *t_list)
 				else
 				{
 					int table_columns = tab_entry->num_columns;
-					printf("Test: Number of columns: %d\n", table_columns);
 					//test the column inputs, until the end is reached
 					test = test->next;
 					for(i = 0, test_entry = (cd_entry*)((char*)tab_entry + tab_entry->cd_offset);
 								i < tab_entry->num_columns; i++, test_entry++)
 					{
+						column_not_null = test_entry->not_null;
 						column_type = test_entry->col_type;
 						column_length = test_entry->col_len;
-						if((test->tok_class != constant) && (test->tok_class != symbol))//check if input was classified as constant
+						if((test->tok_class != constant) && (test->tok_class != symbol) && test->tok_class != keyword)//check if input was classified as constant
 						{
 							//ERROR
 							rc = INVALID_TYPE_INSERTED;
@@ -820,13 +808,25 @@ int sem_insert_into(token_list *t_list)
 						}
 						else
 						{
-							if((test->tok_value != INT_LITERAL) && (test->tok_value != STRING_LITERAL) && (test->tok_value != S_COMMA)) //input has to be int or string or comma
+							if((test->tok_value != INT_LITERAL) && (test->tok_value != STRING_LITERAL) 
+									&& (test->tok_value != S_COMMA) && (test->tok_value != K_NULL)) //input has to be int or string or comma
 							{
 								//ERROR
-								rc = INVALID_TYPE_INSERTED;
-								test->tok_value = INVALID;
-								done = true;
-								printf("test: not the correct token value\n");
+								if(test->next->tok_value == EOC)
+								{
+									rc = INSERT_COLUMN_NUMBER_MISMATCH;
+									test->tok_value = INVALID;
+									done = true;
+									printf("Missing comma, possible that number of columns and insert values don't match");
+								}
+								else
+								{
+									rc = INVALID_TYPE_INSERTED;
+									test->tok_value = INVALID;
+									done = true;
+									printf("invalid input\n");
+								}
+								
 							}
 							else
 							{
@@ -836,7 +836,15 @@ int sem_insert_into(token_list *t_list)
 									rc = INVALID_TYPE_INSERTED;
 									test->tok_value = INVALID;
 									done = true;
-									printf("test: string literal =/= integer\n");
+									printf("Type mismatch\n");
+								}
+								else if((test->tok_value == K_NULL) && (column_not_null == 1))
+								{
+									char *column_name = test_entry->col_name;
+									rc = NOT_NULL_PARAMETER;
+									test->tok_value = INVALID;
+									done = true;
+									printf("Not Null constraint exists for column name %s\n", column_name);
 								}
 								else if((test->tok_value == INT_LITERAL) && (column_type == T_CHAR))
 								{
@@ -844,16 +852,15 @@ int sem_insert_into(token_list *t_list)
 									rc = INVALID_TYPE_INSERTED;
 									test->tok_value = INVALID;
 									done = true;
-									printf("test: integer literal =/= char\n");
+									printf("Type mismatch\n");
 								}
-								else if((test->tok_value == S_COMMA))
+								else if(test->tok_value == S_COMMA)
 								{
 									test = test->next;
 									i--;
 									test_entry--;
-									printf("test: moved to next token in list\n");
 								}
-								else if((test->tok_value == S_RIGHT_PAREN) && (test->next->tok_value == EOC) &&
+				/*				else if((test->tok_value == S_RIGHT_PAREN) && (test->next->tok_value == EOC) &&
 											(column_type == T_CHAR))
 								{
 									printf("test: end of insert\n");
@@ -866,7 +873,7 @@ int sem_insert_into(token_list *t_list)
 									printf("test: end of insert\n");
 									printf("test: columns do not match\n");
 									done = true;
-								}
+								}*/
 								else
 								{
 									if((test->tok_value == STRING_LITERAL) && (column_type == T_CHAR))
@@ -881,13 +888,11 @@ int sem_insert_into(token_list *t_list)
 										}
 										else
 										{
-											printf("Test column %d passed.\n", i+1);
 											test = test->next;
 										}
 									}
 									else if((test->tok_value == INT_LITERAL) && (column_type == T_INT))
 									{
-										printf("Test column %d passed.\n", i+1);
 										test = test->next;
 									}
 								}	
@@ -1048,7 +1053,51 @@ int sem_insert_into(token_list *t_list)
 
 int sem_select_all(token_list *t_list)
 {
-	int rc = 0;
+	int rc = 0, record_size = 0, not_null = 0, file_size = 0;
+	int integer_size = 4, rows_inserted = 4;
+	int column_type, column_length, input_length, input;
+	char *input_string = NULL;
+	token_list *read;
+	tpd_entry *tab_entry = NULL;
+	cd_entry *test_entry = NULL;
+
+	FILE *flook = NULL;
+	bool done = false;
+	bool correct = false;
+
+	read = t_list;
+
+	if((tab_entry = get_tpd_from_list(read->tok_string)) == NULL)
+	{
+		rc = TABLE_NOT_EXIST;
+		done = true;
+		read->tok_value = INVALID;
+	}
+	else
+	{
+		char* extensionName = ".tab";
+		char* addTableName = (char*)malloc(strlen(tab_entry->table_name) + strlen(extensionName) + 1);
+		strcat(addTableName, tab_entry->table_name);
+		strcat(addTableName, extensionName);
+
+		if((flook = fopen(addTableName, "rbc")) == NULL)
+		{
+			rc = FILE_OPEN_ERROR;
+			done = true;
+			read->tok_value = INVALID;
+		}
+		if((fseek(flook, 8, SEEK_SET)) == 0)
+		{
+			fread(&rows_inserted, sizeof(int), 1, flook);
+			printf("Rows in table: %d\n", rows_inserted);
+		}
+
+	/*	while((!rc) && (!done))
+		{
+
+		}*/
+
+	}
 	return rc;
 }
 
