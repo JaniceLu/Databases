@@ -738,6 +738,7 @@ int sem_insert_into(token_list *t_list)
 	if((tab_entry = get_tpd_from_list(cur->tok_string)) == NULL)
 	{
 		rc = TABLE_NOT_EXIST;
+		done = true;
 		cur->tok_value = INVALID;
 	}
 	else
@@ -752,11 +753,13 @@ int sem_insert_into(token_list *t_list)
 		if((fhandle = fopen(addTableName, "abc")) == NULL)
 		{
 			rc = FILE_OPEN_ERROR;
+			done = true;
 			cur->tok_value = INVALID;
 		}
 		if((flook = fopen(addTableName, "rbc")) == NULL)
 		{
 			rc = FILE_OPEN_ERROR;
+			done = true;
 			cur->tok_value = INVALID;
 
 		}
@@ -774,6 +777,7 @@ int sem_insert_into(token_list *t_list)
 			{
 				//ERROR
 				rc = INVALID_INSERT_STATEMENT;
+				done = true;
 				cur->tok_value = INVALID;
 			}
 			else
@@ -783,6 +787,7 @@ int sem_insert_into(token_list *t_list)
 				{
 					//ERROR
 					rc = INVALID_INSERT_STATEMENT;
+					done = true;
 					cur->tok_value = INVALID;
 				}
 				else
