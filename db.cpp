@@ -716,29 +716,31 @@ int sem_create_table(token_list *t_list)
 
 int sem_insert_into(token_list *t_list)
 {
-
-	int rc = 0, record_size = 0, rows_inserted = 4;
-	int integer_size = 4;
+	int zero = 0, counter = 0, i;
+	int rc = 0, record_size = 0, not_null = 0, file_size = 0;
+	int integer_size = 4, rows_inserted = 4;
 	int column_type, column_length, input_length, input;
 	char *input_string = NULL;
-	int not_null = 0, file_size = 0;
 	token_list *cur;
+	token_list *test;
 	tpd_entry *tab_entry = NULL;
-	tpd_entry *new_entry = NULL;
-	int zero = 0, counter = 0, i;
 	cd_entry *col_entry = NULL;
+	cd_entry *test_entry = NULL;
 	FILE *fhandle = NULL;
 	FILE *flook = NULL;
 	bool done = false;
+	bool correct = false;
 
 	/* void * memset ( void * ptr, int value, size_t num ); 
 	   allocate memory at ptr with value and size_t */
 	cur = t_list;
+	test = t_list;
 
 	if((tab_entry = get_tpd_from_list(cur->tok_string)) == NULL)
 	{
 		rc = TABLE_NOT_EXIST;
 		done = true;
+		test->tok_value = INVALID;
 		cur->tok_value = INVALID;
 	}
 	else
@@ -754,64 +756,166 @@ int sem_insert_into(token_list *t_list)
 		{
 			rc = FILE_OPEN_ERROR;
 			done = true;
+			test->tok_value = INVALID;
 			cur->tok_value = INVALID;
 		}
 		if((flook = fopen(addTableName, "rbc")) == NULL)
 		{
 			rc = FILE_OPEN_ERROR;
 			done = true;
+			test->tok_value = INVALID;
 			cur->tok_value = INVALID;
 
 		}
-		if(!rc)
+		while((!rc) && (!done))
 		{
 			fseek(flook, 4, SEEK_SET);
 			fread(&record_size, sizeof(int), 1, flook);
 			fseek(flook, 0, SEEK_SET);
 			fread(&file_size, sizeof(int), 1, flook);
+			fflush(flook);
 			fclose(flook);
-			printf("file size is: %d\n", file_size);
-			printf("record_size is: %d\n", record_size);
+			printf("File size is: %d\n", file_size);
+			printf("Record size is: %d\n", record_size);
+			test = test->next;
 			cur = cur->next; //now onto VALUES
 			if(cur->tok_value != K_VALUES)
 			{
 				//ERROR
 				rc = INVALID_INSERT_STATEMENT;
 				done = true;
+				test->tok_value = INVALID;
 				cur->tok_value = INVALID;
 			}
 			else
 			{
+				test = test->next;
 				cur = cur->next; //now onto '('
 				if(cur->tok_value != S_LEFT_PAREN)
 				{
 					//ERROR
 					rc = INVALID_INSERT_STATEMENT;
 					done = true;
+					test->tok_value = INVALID;
 					cur->tok_value = INVALID;
 				}
 				else
 				{
-					printf("Number of columns: %d\n", tab_entry->num_columns);
+					int table_columns = tab_entry->num_columns;
+					printf("Test: Number of columns: %d\n", table_columns);
+					//test the column inputs, until the end is reached
+					test = test->next;
+					for(i = 0, test_entry = (cd_entry*)((char*)tab_entry + tab_entry->cd_offset);
+								i < tab_entry->num_columns; i++, test_entry++)
+					{
+						column_type = test_entry->col_type;
+						column_length = test_entry->col_len;
+						if((test->tok_class != constant) && (test->tok_class != symbol))//check if input was classified as constant
+						{
+							//ERROR
+							rc = INVALID_TYPE_INSERTED;
+							test->tok_value = INVALID;
+							done = true;
+							printf("test: input is not a constant\n");
+						}
+						else
+						{
+							if((test->tok_value != INT_LITERAL) && (test->tok_value != STRING_LITERAL) && (test->tok_value != S_COMMA)) //input has to be int or string or comma
+							{
+								//ERROR
+								rc = INVALID_TYPE_INSERTED;
+								test->tok_value = INVALID;
+								done = true;
+								printf("test: not the correct token value\n");
+							}
+							else
+							{
+								if((test->tok_value == STRING_LITERAL) && (column_type == T_INT))//check to see if table column type matches input
+								{
+									//ERROR, type mismatch
+									rc = INVALID_TYPE_INSERTED;
+									test->tok_value = INVALID;
+									done = true;
+									printf("test: string literal =/= integer\n");
+								}
+								else if((test->tok_value == INT_LITERAL) && (column_type == T_CHAR))
+								{
+									//ERROR, type mismatch
+									rc = INVALID_TYPE_INSERTED;
+									test->tok_value = INVALID;
+									done = true;
+									printf("test: integer literal =/= char\n");
+								}
+								else if((test->tok_value == S_COMMA))
+								{
+									test = test->next;
+									i--;
+									test_entry--;
+									printf("test: moved to next token in list\n");
+								}
+								else if((test->tok_value == S_RIGHT_PAREN) && (test->next->tok_value == EOC) &&
+											(column_type == T_CHAR))
+								{
+									printf("test: end of insert\n");
+									printf("test: columns do not match\n");
+									done = true;
+								}
+								else if((test->tok_value == S_RIGHT_PAREN) && (test->next->tok_value == EOC) &&
+											(column_type == T_INT))
+								{
+									printf("test: end of insert\n");
+									printf("test: columns do not match\n");
+									done = true;
+								}
+								else
+								{
+									if((test->tok_value == STRING_LITERAL) && (column_type == T_CHAR))
+									{
+										input_length = strlen(test->tok_string);
+										if(column_length < input_length)//check length of input
+										{
+											printf("test: input length too long \n");
+											rc = INPUT_LENGTH_TOO_LONG;
+											done = true;
+											test->tok_value = INVALID;
+										}
+										else
+										{
+											printf("Test column %d passed.\n", i+1);
+											test = test->next;
+										}
+									}
+									else if((test->tok_value == INT_LITERAL) && (column_type == T_INT))
+									{
+										printf("Test column %d passed.\n", i+1);
+										test = test->next;
+									}
+								}	
+							}//checking to see if input type and column type is the same
+						}				
+					}
+
+					if(!done){
+						correct = true;
+					}
+
 					cur = cur->next;
-					while(!done)
+					if(correct)
 					{
 						for(i = 0, col_entry = (cd_entry*)((char*)tab_entry + tab_entry->cd_offset); 
 								i < tab_entry->num_columns; i++, col_entry++)
 						{
 							column_type = col_entry->col_type;
 							column_length = col_entry->col_len;
-							printf("Iteration: %d\n", i);
-							printf("Column Type   (col_type) = %d\n", column_type);
-							printf("Column Length (col_len)  = %d\n", column_length);
-							printf("next token is: %s\n", cur->tok_string);
+							printf("Working on column: %d\n", i);
+							printf("Token is: %s\n", cur->tok_string);
 							if((cur->tok_class != constant) && (cur->tok_class != symbol))//check if input was classified as constant
 							{
 								//ERROR
 								rc = INVALID_TYPE_INSERTED;
 								cur->tok_value = INVALID;
 								done = true;
-								printf("input is not a constant\n");
+								printf("Input is not a constant\n");
 							}							
 							else
 							{
@@ -821,7 +925,7 @@ int sem_insert_into(token_list *t_list)
 									rc = INVALID_TYPE_INSERTED;
 									cur->tok_value = INVALID;
 									done = true;
-									printf("not the correct token value\n");
+									printf("Not the correct token value\n");
 								}
 								else
 								{
@@ -831,7 +935,7 @@ int sem_insert_into(token_list *t_list)
 										rc = INVALID_TYPE_INSERTED;
 										cur->tok_value = INVALID;
 										done = true;
-										printf("string literal =/= integer\n");
+										printf("String literal =/= integer\n");
 									}
 									else if((cur->tok_value == INT_LITERAL) && (column_type == T_CHAR))
 									{
@@ -839,18 +943,18 @@ int sem_insert_into(token_list *t_list)
 										rc = INVALID_TYPE_INSERTED;
 										cur->tok_value = INVALID;
 										done = true;
-										printf("integer literal =/= char\n");
+										printf("Integer literal =/= char\n");
 									}
 									else if((cur->tok_value == S_COMMA))
 									{
 										cur = cur->next;
 										i--;
 										col_entry--;
-										printf("moved to next token in list\n");
+										printf("Moved to next token in list\n");
 									}
 									else if((cur->tok_value == S_RIGHT_PAREN) && cur->next->tok_value == EOC)
 									{
-										printf("end of insert\n");
+										printf("End of insert\n");
 										done = true;
 									}
 									else
@@ -860,7 +964,7 @@ int sem_insert_into(token_list *t_list)
 											input_length = strlen(cur->tok_string);
 											if(column_length < input_length)//check length of input
 											{
-												printf("input length too long \n");
+												printf("Input length too long \n");
 												rc = INPUT_LENGTH_TOO_LONG;
 												done = true;
 												cur->tok_value = INVALID;
@@ -873,8 +977,8 @@ int sem_insert_into(token_list *t_list)
 												fwrite(&input_length, 1, 1, fhandle);
 												fwrite(input_string, column_length, 1, fhandle);
 												counter += (col_entry->col_len+1);
-												printf("current counter length is: %d\n", counter);
-												printf("rows_inserted: %d\n", rows_inserted);
+												printf("Current counter length is: %d\n", counter);
+												printf("Rows_inserted: %d\n", rows_inserted);
 												cur = cur->next;
 											}
 										}
@@ -884,7 +988,7 @@ int sem_insert_into(token_list *t_list)
 											fwrite(&integer_size, 1, 1, fhandle);
 											fwrite(&input, sizeof(int), 1, fhandle);
 											counter += (col_entry->col_len+1);
-											printf("current counter length is: %d\n", counter);
+											printf("Current counter length is: %d\n", counter);
 											cur = cur->next;
 										}	
 									}	
@@ -894,8 +998,8 @@ int sem_insert_into(token_list *t_list)
 						if((!rc) && (record_size > counter))
 						{
 							int round_up = record_size - counter;
-							printf("we got here\n");
 							fwrite(&zero, round_up, 1, fhandle);
+							fflush(fhandle);
 							fclose(fhandle);
 							FILE * fhandle1 = NULL;
 							if((fhandle1 = fopen(addTableName, "r+b")) == NULL)
@@ -907,9 +1011,9 @@ int sem_insert_into(token_list *t_list)
 							if((fseek(fhandle1, 8, SEEK_SET)) == 0)
 							{
 								fread(&rows_inserted, sizeof(int), 1, fhandle1);
-								printf("rows_inserted before insert: %d\n", rows_inserted);
+								printf("Rows before insert: %d\n", rows_inserted);
 								rows_inserted += 1;
-								printf("rows_inserted after insert: %d\n", rows_inserted);
+								printf("Rows after insert: %d\n", rows_inserted);
 								if((fseek(fhandle1, 8, SEEK_SET)) == 0)
 								{
 									fwrite(&rows_inserted, 1, 1, fhandle1);
@@ -918,24 +1022,25 @@ int sem_insert_into(token_list *t_list)
 							if((fseek(fhandle1, 0, SEEK_SET)) == 0)
 							{
 								fread(&file_size, sizeof(int), 1, fhandle1);
-								printf("file_size before insert: %d\n", file_size);
+								printf("File size before insert: %d\n", file_size);
 								file_size += record_size;
-								printf("file_size after insert: %d\n", file_size);
+								printf("File size after insert: %d\n", file_size);
 								if((fseek(fhandle1, 0, SEEK_SET)) == 0)
 								{
 									fwrite(&file_size, sizeof(int), 1, fhandle1);
 								}
 							}
-							
-							done = true;
-							
-							
+							fflush(fhandle1);
+							fclose(fhandle1);
+							done = true;								
 						}
-					} //fill in file with data (DONE)		
+					} //fill in file with data (DONE)	
+					
 				} //check for correct keyword
 			} //check for keyword VALUE
 		}//check for correct keyword
 	} //check if table exists
+	
 
 
 	return rc;
