@@ -1036,7 +1036,7 @@ int sem_select_all(token_list *t_list)
 {
 	int rc = 0, record_size = 0, offset = 0, i;
 	int rows_inserted = 4;
-	int column_type, column_length, input_length, counter;
+	int column_type, column_length, input_length, counter = 0;
 	char *input = NULL;
 	token_list *read;
 	tpd_entry *tab_entry = NULL;
@@ -1069,6 +1069,8 @@ int sem_select_all(token_list *t_list)
 		if((fseek(flook, 4, SEEK_SET)) == 0)
 			{
 				fread(&record_size, sizeof(int), 1, flook);
+				fflush(stdout);
+				printf("Record size: %d\n", record_size);
 			}
 
 		//look for number of rows in the file
@@ -1077,6 +1079,7 @@ int sem_select_all(token_list *t_list)
 			fread(&rows_inserted, sizeof(int), 1, flook);
 			printf("Rows in table: %d\n", rows_inserted);
 		}
+
 		//array to hold column lengths
 		int *column_lengths = new int[rows_inserted];
 		int *column_type = new int[rows_inserted];
@@ -1131,26 +1134,30 @@ int sem_select_all(token_list *t_list)
 		//	printf("Offset value: %d\n", offset);
 		}
 
-
-		//find record size
-		if((fseek(flook, 4, SEEK_SET)) == 0)
-		{
-			fread(&record_size, sizeof(int), 1, flook);
-			fflush(stdout);
-			printf("Record size: %d\n", record_size);
-		}
-
 		int position = offset;
 		int rows_selected = 0;
 		char *char_input = NULL;
 		int int_input = 0;
+		int length = 0;
+		int which_one = 0;
+		int answer = rows_inserted*columns;
 		//print column values
-
+		printf("rows_inserted*columns is: %d\n", answer);
 		for(i = 0; i < (rows_inserted*columns); i++)
 		{
 			char_input = (char*)malloc(column_lengths[i]+1);
-			int length = column_lengths[i];
-			printf("length is %d\n", length);
+			if(i > rows_inserted)
+			{
+				which_one += 1;
+				int index = i - which_one;
+				length = column_lengths[index];
+			}
+			else
+			{
+				length = column_lengths[i];
+			}
+			input_length = 0;
+		//	printf("length is %d\n", length);
 
 			if((fseek(flook, position, SEEK_SET)) == 0)
 			{
@@ -1176,13 +1183,20 @@ int sem_select_all(token_list *t_list)
 								int add = record_size - counter;
 								counter += add;
 								position += add;
-								printf ("counter is %d\n", length);
+								fflush(stdout);
+								printf ("counter is %d\n", counter);
 								printf("position is %d\n", position);
+								printf("%d\n", i);
 							}
-							counter += 4;
-							position += 4;
-							printf ("counter is %d\n", length);
-							printf("position is %d\n", position);
+							else
+							{
+								counter += 4;
+								position += 4;
+								printf ("counter is %d\n", counter);
+								printf("position is %d\n", position);
+								printf("%d\n", i);
+							}
+							
 						}
 						else
 						{
@@ -1190,8 +1204,8 @@ int sem_select_all(token_list *t_list)
 							printf("|%16d", int_input);
 							counter += 4;
 							position += 4;
-							printf ("counter is %d\n", length);
-							printf("position is %d\n", position);
+					//		printf ("counter is %d\n", counter);
+					//		printf("position is %d\n", position);
 						}
 					}
 					else if(column_type[i] == T_CHAR)
@@ -1210,24 +1224,28 @@ int sem_select_all(token_list *t_list)
 								int add = record_size - counter;
 								counter += add;
 								position += add;
-								printf ("counter is %d\n", length);
+								printf ("counter is %d\n", counter);
 								printf("position is %d\n", position);
+								printf("%d\n", i);
 							}
-							counter += length;
-							position += length;
-							printf ("counter is %d\n", length);
-							printf("position is %d\n", position);
+							else
+							{
+								counter += length;
+								position += length;
+								printf ("counter is %d\n", counter);
+								printf("position is %d\n", position);
+								printf("%d\n", i);
+							}
+							
 						}
 						else
-						{
-					//		printf("did we get here?\n");
-							
+						{	
 							printf("|%-16s", char_input);
 							fflush(stdout);
 							counter += length;
 							position += length;
-							printf ("counter is %d\n", length);
-							printf("position is %d\n", position);
+					//		printf ("counter is %d\n", counter);
+					//		printf("position is %d\n", position);
 						}
 					}
 				}
