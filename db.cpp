@@ -1030,24 +1030,22 @@ int sem_insert_into(token_list *t_list)
 
 int sem_select_all(token_list *t_list)
 {
-	int rc = 0, record_size = 0, not_null = 0, file_size = 0;
+	int rc = 0, record_size = 0, offset = 0, file_size = 0;
 	int integer_size = 4, rows_inserted = 4;
 	int column_type, column_length, input_length, input;
-	char *input_string = NULL;
+	char *input = NULL;
 	token_list *read;
 	tpd_entry *tab_entry = NULL;
 	cd_entry *test_entry = NULL;
 
 	FILE *flook = NULL;
 	bool done = false;
-	bool correct = false;
 
 	read = t_list;
 
 	if((tab_entry = get_tpd_from_list(read->tok_string)) == NULL)
 	{
 		rc = TABLE_NOT_EXIST;
-		done = true;
 		read->tok_value = INVALID;
 	}
 	else
@@ -1057,10 +1055,10 @@ int sem_select_all(token_list *t_list)
 		strcat(addTableName, tab_entry->table_name);
 		strcat(addTableName, extensionName);
 
+
 		if((flook = fopen(addTableName, "rbc")) == NULL)
 		{
 			rc = FILE_OPEN_ERROR;
-			done = true;
 			read->tok_value = INVALID;
 		}
 		if((fseek(flook, 8, SEEK_SET)) == 0)
@@ -1068,7 +1066,59 @@ int sem_select_all(token_list *t_list)
 			fread(&rows_inserted, sizeof(int), 1, flook);
 			printf("Rows in table: %d\n", rows_inserted);
 		}
+		int column_lengths[rows_inserted] = NULL;
+		int columns = tab_entry->num_columns;
+		char* TableName = (char*)malloc(strlen(tab_entry->table_name) + strlen(extensionName) + 1);
+		strcat(TableName, tab_entry->table_name);
+		strcat(TableName, extensionName);
+		char *top_header = "+----------------";
+		char *top_end_header = "+----------------+";
+		//print top of select
+		for(i = 0; i < columns; i++)
+		{
+			if(i == (columns-1))
+			{
+				printf("%s\n", top_end_header);
+			}
+			else
+			{
+				printf("%s", top_header);
+			}
+		}
+		//print column names
+		for(i = 0, test_entry = (cd_entry*)((char*)tab_entry + tab_entry->cd_offset);
+								i < tab_entry->num_columns; i++, test_entry++)
+		{
+			column_lengths[i] = test_entry->col_len;
+			if(i == (tab_entry->num_columns-1))
+			{
+				printf("|%-16s|", test_entry->col_name);
+			}
+			else
+			{
+				printf("|%-16s", test_entry->col_name);	
+			}
+			
+		}
+		//find offset value
+		if((fseek(flook, 12, SEEK_SET)) == 0)
+		{
+			fread(&offset, sizeof(int), 1, flook);
+			printf("Offset value: %d\n", offset);
+		}
 
+
+		//find record size
+		if((fseek(flook, 4, SEEK_SET)) == 0)
+		{
+			fread(&record_size, sizeof(int), 1, flook);
+			printf("Record size: %d\n", record_size);
+		}
+		//print column values
+		for(i = 0; )
+		{
+			char *input = 
+		}
 	/*	while((!rc) && (!done))
 		{
 
