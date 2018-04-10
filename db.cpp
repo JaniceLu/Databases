@@ -1139,116 +1139,229 @@ int sem_select_all(token_list *t_list)
 		char *char_input = NULL;
 		int int_input = 0;
 		int length = 0;
-		int which_one = 0;
+		int which_one = rows_inserted-1;
 		int answer = rows_inserted*columns;
-		//print column values
-		printf("rows_inserted*columns is: %d\n", answer);
-		for(i = 0; i < (rows_inserted*columns); i++)
+		int index = 0;
+	//	for(int j = 0; i )
+		//print column values for one row
+		for(i = 0; i < answer; i++)
 		{
-			char_input = (char*)malloc(column_lengths[i]+1);
-			if(i > rows_inserted)
+	//		fflush(stdout);
+	//		printf("length is %d\n", length);
+	//		fflush(stdout);
+	//		printf("i is %d\n", i);
+			if(i >= which_one)
 			{
-				which_one += 1;
-				int index = i - which_one;
+				index = i%columns;
 				length = column_lengths[index];
+				char_input = (char*)malloc(column_lengths[index]+1);
 			}
 			else
 			{
+				char_input = (char*)malloc(column_lengths[i]+1);
 				length = column_lengths[i];
 			}
 			input_length = 0;
-		//	printf("length is %d\n", length);
-
+//			fflush(stdout);
+//			printf ("counter is %d\n", counter);
+//			fflush(stdout);
+//			printf("position is %d\n", position);
 			if((fseek(flook, position, SEEK_SET)) == 0)
 			{
 				fread(&input_length, 1, 1, flook);
 				counter += 1;
 				position += 1;
-			//	printf("Row %d: got to here\n",i);
 				if((fseek(flook, position, SEEK_SET)) == 0)
 				{
-				//	printf("Position %d: got to here\n", position);
-					if(column_type[i] == T_INT)
+					if(i >= rows_inserted)
 					{
-					//	printf("Column is an integer: got to here\n");
-						fread(&int_input, sizeof(int), 1, flook);
-					//	printf("read into int_input\n");
-						if(i == columns-1)
+						printf("this is the %d row\n", i);
+						if(column_type[index] == T_INT)
 						{
 							fflush(stdout);
-							printf("|%16d|\n", int_input);
-							rows_selected +=1;
-							if(record_size > counter)
+							
+							fread(&int_input, sizeof(int), 1, flook);
+
+							if(i % (columns-1) == 0)
 							{
-								int add = record_size - counter;
-								counter += add;
-								position += add;
 								fflush(stdout);
-								printf ("counter is %d\n", counter);
-								printf("position is %d\n", position);
-								printf("%d\n", i);
+								printf("|%16d|\n", int_input);
+								rows_selected +=1;
+								if(record_size > counter)
+								{
+									counter += 4;
+									position += 4;
+									fflush(stdout);
+									int add = record_size - counter;
+							//		printf ("the old counter is %d\n", counter);
+							//		printf("the old position is %d\n", position);
+									counter += add;
+									position += add;
+							//		printf ("the counter is %d\n", counter);
+							//		printf("the position is %d\n", position);
+							//		printf("%d\n", i);
+								}
+								else
+								{
+									counter += 4;
+									position += 4;
+							//		printf ("counter is %d\n", counter);
+							//		printf("position is %d\n", position);
+							//		printf("%d\n", i);
+								}
+								
 							}
 							else
 							{
+								fflush(stdout);
+								printf("|%16d", int_input);
 								counter += 4;
 								position += 4;
-								printf ("counter is %d\n", counter);
-								printf("position is %d\n", position);
-								printf("%d\n", i);
+						//		printf ("counter is %d\n", counter);
+						//		printf("position is %d\n", position);
 							}
-							
 						}
-						else
+						else if(column_type[index] == T_CHAR)
 						{
+						//	printf("Column is a char: got to here\n");
+							fread(char_input, length, 1, flook);
+						//	printf("read into char_input\n");
 							fflush(stdout);
-							printf("|%16d", int_input);
-							counter += 4;
-							position += 4;
-					//		printf ("counter is %d\n", counter);
-					//		printf("position is %d\n", position);
+							if(i == columns-1)
+							{	
+								printf("|%-16s|\n", char_input);
+								fflush(stdout);
+								rows_selected += 1;
+								if(record_size > counter)
+								{
+									int add = record_size - counter;
+									counter += add;
+									position += add;
+						//			printf ("counter is %d\n", counter);
+						//			printf("position is %d\n", position);
+						//			printf("%d\n", i);
+								}
+								else
+								{
+									counter += length;
+									position += length;
+						//			printf ("counter is %d\n", counter);
+						//			printf("position is %d\n", position);
+						//			printf("%d\n", i);
+								}
+								
+							}
+							else
+							{	
+								printf("|%-16s", char_input);
+								fflush(stdout);
+								counter += length;
+								position += length;
+						//		printf ("counter is %d\n", counter);
+						//		printf("position is %d\n", position);
+							}
 						}
+
 					}
-					else if(column_type[i] == T_CHAR)
+					else
 					{
-					//	printf("Column is a char: got to here\n");
-						fread(char_input, length, 1, flook);
-					//	printf("read into char_input\n");
-						fflush(stdout);
-						if(i == columns-1)
-						{	
-							printf("|%-16s|\n", char_input);
-							fflush(stdout);
-							rows_selected += 1;
-							if(record_size > counter)
+						if(column_type[i] == T_INT)
+						{
+							fread(&int_input, sizeof(int), 1, flook);
+
+							if(i == columns-1)
 							{
-								int add = record_size - counter;
-								counter += add;
-								position += add;
-								printf ("counter is %d\n", counter);
-								printf("position is %d\n", position);
-								printf("%d\n", i);
+								fflush(stdout);
+								printf("|%16d|\n", int_input);
+									rows_selected +=1;
+								if(record_size > counter)
+								{
+									counter += 4;
+									position += 4;
+									fflush(stdout);
+									int add = record_size - counter;
+								//	printf ("the old counter is %d\n", counter);
+							///		printf("the old position is %d\n", position);
+									counter += add;
+									position += add;
+						//			printf ("the counter is %d\n", counter);
+						//			printf("the position is %d\n", position);
+						//			printf("%d\n", i);
+								}
+								else
+								{
+									counter += 4;
+									position += 4;
+						//			printf ("counter is %d\n", counter);
+						//			printf("position is %d\n", position);
+						//			printf("%d\n", i);
+								}
+								
 							}
 							else
 							{
+								fflush(stdout);
+								printf("|%16d", int_input);
+								counter += 4;
+								position += 4;
+						//		printf ("counter is %d\n", counter);
+						//		printf("position is %d\n", position);
+							}
+						}
+						else if(column_type[i] == T_CHAR)
+						{
+						//	printf("Column is a char: got to here\n");
+							fread(char_input, length, 1, flook);
+						//	printf("read into char_input\n");
+							fflush(stdout);
+							if(i == columns-1)
+							{	
+								printf("|%-16s|\n", char_input);
+								fflush(stdout);
+								rows_selected += 1;
+								if(record_size > counter)
+								{
+									int add = record_size - counter;
+									counter += add;
+									position += add;
+							//		printf ("counter is %d\n", counter);
+							//		printf("position is %d\n", position);
+							//		printf("%d\n", i);
+								}
+								else
+								{
+									counter += length;
+									position += length;
+							//		printf ("counter is %d\n", counter);
+							//		printf("position is %d\n", position);
+								//		printf("%d\n", i);
+							}
+								
+							}
+							else
+							{	
+								printf("|%-16s", char_input);
+								fflush(stdout);
 								counter += length;
 								position += length;
-								printf ("counter is %d\n", counter);
-								printf("position is %d\n", position);
-								printf("%d\n", i);
+						//		printf ("counter is %d\n", counter);
+						//		printf("position is %d\n", position);
 							}
-							
-						}
-						else
-						{	
-							printf("|%-16s", char_input);
-							fflush(stdout);
-							counter += length;
-							position += length;
-					//		printf ("counter is %d\n", counter);
-					//		printf("position is %d\n", position);
 						}
 					}
+					
 				}
+				else
+				{
+					fflush(stdout);
+					printf("we couldnt find it! after the length counter\n");
+
+				}
+			}
+			else
+			{
+				fflush(stdout);
+				printf("we couldnt find it!\n");
 			}
 		}
 
