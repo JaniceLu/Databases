@@ -1085,7 +1085,7 @@ int sem_select_all(token_list *t_list)
 		int *column_type = new int[rows_inserted];
 		//number of columns in table
 		int columns = tab_entry->num_columns;
-
+		printf("Columns in table: %d \n", columns);
 		char *header = "+----------------";
 		char *end_header = "+----------------+";
 		//print top of select
@@ -1116,6 +1116,7 @@ int sem_select_all(token_list *t_list)
 			}
 			
 		}
+		//print bottom on column name border
 		for(i = 0; i < columns; i++)
 		{
 			if(i == (columns-1))
@@ -1139,11 +1140,10 @@ int sem_select_all(token_list *t_list)
 		char *char_input = NULL;
 		int int_input = 0;
 		int length = 0;
-		int which_one = rows_inserted-1;
+		int which_one = columns-1;
 		int answer = rows_inserted*columns;
 		int index = 0;
-	//	for(int j = 0; i )
-		//print column values for one row
+
 		for(i = 0; i < answer; i++)
 		{
 	//		fflush(stdout);
@@ -1162,10 +1162,7 @@ int sem_select_all(token_list *t_list)
 				length = column_lengths[i];
 			}
 			input_length = 0;
-//			fflush(stdout);
-//			printf ("counter is %d\n", counter);
-//			fflush(stdout);
-//			printf("position is %d\n", position);
+
 			if((fseek(flook, position, SEEK_SET)) == 0)
 			{
 				fread(&input_length, 1, 1, flook);
@@ -1173,16 +1170,15 @@ int sem_select_all(token_list *t_list)
 				position += 1;
 				if((fseek(flook, position, SEEK_SET)) == 0)
 				{
-					if(i >= rows_inserted)
+					if(i >= columns)
 					{
-						printf("this is the %d row\n", i);
+	//					printf("this is the %d row\n", i);
 						if(column_type[index] == T_INT)
 						{
 							fflush(stdout);
-							
 							fread(&int_input, sizeof(int), 1, flook);
 
-							if(i % (columns-1) == 0)
+							if(((i+1) % columns) == 0)
 							{
 								fflush(stdout);
 								printf("|%16d|\n", int_input);
@@ -1193,13 +1189,13 @@ int sem_select_all(token_list *t_list)
 									position += 4;
 									fflush(stdout);
 									int add = record_size - counter;
-							//		printf ("the old counter is %d\n", counter);
-							//		printf("the old position is %d\n", position);
+			//						printf ("the old counter is %d\n", counter);
+		//							printf("the old position is %d\n", position);
 									counter += add;
 									position += add;
-							//		printf ("the counter is %d\n", counter);
-							//		printf("the position is %d\n", position);
-							//		printf("%d\n", i);
+	//								printf ("the counter is %d\n", counter);
+	//								printf("the position is %d\n", position);
+	//								printf("%d\n", i);
 								}
 								else
 								{
@@ -1217,8 +1213,8 @@ int sem_select_all(token_list *t_list)
 								printf("|%16d", int_input);
 								counter += 4;
 								position += 4;
-						//		printf ("counter is %d\n", counter);
-						//		printf("position is %d\n", position);
+			//					printf ("counter is %d\n", counter);
+			//					printf("position is %d\n", position);
 							}
 						}
 						else if(column_type[index] == T_CHAR)
@@ -1278,7 +1274,7 @@ int sem_select_all(token_list *t_list)
 								{
 									counter += 4;
 									position += 4;
-									fflush(stdout);
+								//	fflush(stdout);
 									int add = record_size - counter;
 								//	printf ("the old counter is %d\n", counter);
 							///		printf("the old position is %d\n", position);
@@ -1300,7 +1296,7 @@ int sem_select_all(token_list *t_list)
 							}
 							else
 							{
-								fflush(stdout);
+							//	fflush(stdout);
 								printf("|%16d", int_input);
 								counter += 4;
 								position += 4;
@@ -1324,6 +1320,8 @@ int sem_select_all(token_list *t_list)
 									int add = record_size - counter;
 									counter += add;
 									position += add;
+									counter += length;
+									position += length;
 							//		printf ("counter is %d\n", counter);
 							//		printf("position is %d\n", position);
 							//		printf("%d\n", i);
@@ -1335,7 +1333,7 @@ int sem_select_all(token_list *t_list)
 							//		printf ("counter is %d\n", counter);
 							//		printf("position is %d\n", position);
 								//		printf("%d\n", i);
-							}
+								}
 								
 							}
 							else
