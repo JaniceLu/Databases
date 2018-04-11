@@ -166,9 +166,10 @@ typedef enum error_return_codes
 	INVALID_COLUMN_LENGTH = -389,			// -389
   	INVALID_REPORT_FILE_NAME = -388,		// -388
   /* Must add all the possible errors from I/U/D + SELECT here */
+  	INSERT_COLUMN_NUMBER_MISMATCH = -384,
+  	NOT_NULL_PARAMETER = -380,
     INPUT_LENGTH_TOO_LONG = -302,
-    INVALID_TYPE_INSERTED = - 301,
-    INVALID_INSERT_STATEMENT = -300,
+    INVALID_TYPE_INSERTED = -382,
 	FILE_OPEN_ERROR = -299,			// -299
 	DBFILE_CORRUPTION = -298,					// -298
 	MEMORY_ERROR = -297							  // -297
