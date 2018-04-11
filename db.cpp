@@ -40,7 +40,7 @@ int main(int argc, char** argv)
 	{
     	rc = get_token(argv[1], &tok_list);
 
-	/*	//Test code
+		//Test code
 		tok_ptr = tok_list;
 		while (tok_ptr != NULL)
 		{
@@ -49,7 +49,7 @@ int main(int argc, char** argv)
 																					//and the value 		      
 			tok_ptr = tok_ptr->next;
 		}
-    */
+    
 		if (!rc)
 		{
 			rc = do_semantic(tok_list);
@@ -884,6 +884,10 @@ int sem_insert_into(token_list *t_list)
 									{
 										test = test->next;
 									}
+									else if((test->tok_value == K_NULL) && (column_not_null != 1))
+									{
+										test = test->next;
+									}
 								}	
 							}//checking to see if input type and column type is the same
 						}				
@@ -899,9 +903,10 @@ int sem_insert_into(token_list *t_list)
 						for(i = 0, col_entry = (cd_entry*)((char*)tab_entry + tab_entry->cd_offset); 
 								i < tab_entry->num_columns; i++, col_entry++)
 						{
+							column_not_null = col_entry->not_null;
 							column_type = col_entry->col_type;
 							column_length = col_entry->col_len;
-							if((cur->tok_class != constant) && (cur->tok_class != symbol))//check if input was classified as constant
+							if((cur->tok_class != constant) && (cur->tok_class != symbol) && (cur->tok_class != keyword))//check if input was classified as constant
 							{
 								//ERROR
 								rc = INVALID_TYPE_INSERTED;
@@ -911,7 +916,8 @@ int sem_insert_into(token_list *t_list)
 							}							
 							else
 							{
-								if((cur->tok_value != INT_LITERAL) && (cur->tok_value != STRING_LITERAL) && (cur->tok_value != S_COMMA)) //input has to be int or string or comma
+								if((cur->tok_value != INT_LITERAL) && (cur->tok_value != STRING_LITERAL) && (cur->tok_value != S_COMMA)
+											&& (cur->tok_value != K_NULL)) //input has to be int or string or comma or NULL
 								{
 									//ERROR
 									rc = INVALID_TYPE_INSERTED;
@@ -936,6 +942,14 @@ int sem_insert_into(token_list *t_list)
 										cur->tok_value = INVALID;
 										done = true;
 										printf("Integer literal =/= char\n");
+									}
+									else if((cur->tok_value == K_NULL) && (column_not_null == 1))
+									{
+										char *column_name = col_entry->col_name;
+										rc = NOT_NULL_PARAMETER;
+										test->tok_value = INVALID;
+										done = true;
+										printf("Not Null constraint exists for column name %s\n", column_name);
 									}
 									else if(cur->tok_value == S_COMMA)
 									{
@@ -977,7 +991,21 @@ int sem_insert_into(token_list *t_list)
 											fwrite(&input, sizeof(int), 1, fhandle);
 											counter += (col_entry->col_len+1);
 											cur = cur->next;
-										}	
+										}
+										else if((cur->tok_value == K_NULL) && (column_not_null != 1) && (column_type == T_INT))
+										{
+											fwrite(&zero, 1, 1, fhandle);
+											fwrite(&zero, sizeof(int), 1, fhandle);
+											counter += (col_entry->col_len+1);
+											cur = cur->next;
+										}
+										else if((cur->tok_value == K_NULL) && (column_not_null != 1) && (column_type == T_CHAR))
+										{
+											fwrite(&zero, 1, 1, fhandle);
+											fwrite(&zero, column_length, 1, fhandle);
+											counter += (col_entry->col_len+1);
+											cur = cur->next;
+										}
 									}	
 								}//checking to see if input type and column type is the same
 							}//check if input class is correct
@@ -1146,10 +1174,6 @@ int sem_select_all(token_list *t_list)
 
 		for(i = 0; i < answer; i++)
 		{
-	//		fflush(stdout);
-	//		printf("length is %d\n", length);
-	//		fflush(stdout);
-	//		printf("i is %d\n", i);
 			if(i >= which_one)
 			{
 				index = i%columns;
@@ -1172,7 +1196,7 @@ int sem_select_all(token_list *t_list)
 				{
 					if(i >= columns)
 					{
-	//					printf("this is the %d row\n", i);
+					//	printf("this is the %d row\n", i);
 						if(column_type[index] == T_INT)
 						{
 							fflush(stdout);
@@ -1185,25 +1209,15 @@ int sem_select_all(token_list *t_list)
 								rows_selected +=1;
 								if(record_size > counter)
 								{
-									counter += 4;
-									position += 4;
 									fflush(stdout);
 									int add = record_size - counter;
-			//						printf ("the old counter is %d\n", counter);
-		//							printf("the old position is %d\n", position);
-									counter += add;
 									position += add;
-	//								printf ("the counter is %d\n", counter);
-	//								printf("the position is %d\n", position);
-	//								printf("%d\n", i);
+									counter = 0;
 								}
 								else
 								{
 									counter += 4;
 									position += 4;
-							//		printf ("counter is %d\n", counter);
-							//		printf("position is %d\n", position);
-							//		printf("%d\n", i);
 								}
 								
 							}
@@ -1213,15 +1227,11 @@ int sem_select_all(token_list *t_list)
 								printf("|%16d", int_input);
 								counter += 4;
 								position += 4;
-			//					printf ("counter is %d\n", counter);
-			//					printf("position is %d\n", position);
 							}
 						}
 						else if(column_type[index] == T_CHAR)
 						{
-						//	printf("Column is a char: got to here\n");
 							fread(char_input, length, 1, flook);
-						//	printf("read into char_input\n");
 							fflush(stdout);
 							if(i == columns-1)
 							{	
@@ -1233,17 +1243,15 @@ int sem_select_all(token_list *t_list)
 									int add = record_size - counter;
 									counter += add;
 									position += add;
-						//			printf ("counter is %d\n", counter);
-						//			printf("position is %d\n", position);
-						//			printf("%d\n", i);
+									counter += length;
+									position += length;
+									counter = 0;
 								}
 								else
 								{
 									counter += length;
 									position += length;
-						//			printf ("counter is %d\n", counter);
-						//			printf("position is %d\n", position);
-						//			printf("%d\n", i);
+									counter = 0;
 								}
 								
 							}
@@ -1253,8 +1261,6 @@ int sem_select_all(token_list *t_list)
 								fflush(stdout);
 								counter += length;
 								position += length;
-						//		printf ("counter is %d\n", counter);
-						//		printf("position is %d\n", position);
 							}
 						}
 
@@ -1269,46 +1275,34 @@ int sem_select_all(token_list *t_list)
 							{
 								fflush(stdout);
 								printf("|%16d|\n", int_input);
-									rows_selected +=1;
+								rows_selected +=1;
 								if(record_size > counter)
 								{
 									counter += 4;
 									position += 4;
-								//	fflush(stdout);
 									int add = record_size - counter;
-								//	printf ("the old counter is %d\n", counter);
-							///		printf("the old position is %d\n", position);
 									counter += add;
 									position += add;
-						//			printf ("the counter is %d\n", counter);
-						//			printf("the position is %d\n", position);
-						//			printf("%d\n", i);
+									counter = 0;
 								}
 								else
 								{
 									counter += 4;
 									position += 4;
-						//			printf ("counter is %d\n", counter);
-						//			printf("position is %d\n", position);
-						//			printf("%d\n", i);
+									counter = 0;
 								}
 								
 							}
 							else
 							{
-							//	fflush(stdout);
 								printf("|%16d", int_input);
 								counter += 4;
 								position += 4;
-						//		printf ("counter is %d\n", counter);
-						//		printf("position is %d\n", position);
 							}
 						}
 						else if(column_type[i] == T_CHAR)
 						{
-						//	printf("Column is a char: got to here\n");
 							fread(char_input, length, 1, flook);
-						//	printf("read into char_input\n");
 							fflush(stdout);
 							if(i == columns-1)
 							{	
@@ -1320,19 +1314,15 @@ int sem_select_all(token_list *t_list)
 									int add = record_size - counter;
 									counter += add;
 									position += add;
-									counter += length;
-									position += length;
-							//		printf ("counter is %d\n", counter);
-							//		printf("position is %d\n", position);
-							//		printf("%d\n", i);
+									printf ("counter is %d\n", counter);
+									printf("position is %d\n", position);
 								}
 								else
 								{
 									counter += length;
 									position += length;
-							//		printf ("counter is %d\n", counter);
-							//		printf("position is %d\n", position);
-								//		printf("%d\n", i);
+									printf ("counter is %d\n", counter);
+									printf("position is %d\n", position);
 								}
 								
 							}
@@ -1341,9 +1331,7 @@ int sem_select_all(token_list *t_list)
 								printf("|%-16s", char_input);
 								fflush(stdout);
 								counter += length;
-								position += length;
-						//		printf ("counter is %d\n", counter);
-						//		printf("position is %d\n", position);
+								position += length;			
 							}
 						}
 					}
