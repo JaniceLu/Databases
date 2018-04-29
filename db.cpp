@@ -347,12 +347,19 @@ int do_semantic(token_list *tok_list)
 		cur = cur->next->next; /*moves pointer to potential table name*/
 	}
 	else if ((cur->tok_value == K_SELECT) &&
-					(cur->next != NULL) && (cur->next->tok_value == S_STAR)
+					(cur->next != NULL) && (cur->next->tok_value == S_STAR) &&
+					(cur->next->next != NULL)
 					&& cur->next->next->tok_value == K_FROM)
 	{
 		printf("SELECT * statement\n");
 		cur_cmd = SELECT;
 		cur = cur->next->next->next; /*moves pointer to table keyword*/
+	}
+	else if((cur->tok_value == K_DELETE) && (cur->next != NULL) && (cur->next->tok_value == K_FROM))
+	{
+		printf("DELETE FROM statement\n");
+		cur_cmd = DELETE;
+		cur = cur->next->next; /*moves pointer to table keyword*/
 	}
 	else
   	{
@@ -382,6 +389,9 @@ int do_semantic(token_list *tok_list)
 						break;
 			case SELECT:
 						rc = sem_select_all(cur);
+						break;
+			case DELETE:
+						rc = sem_delete_from(cur);
 						break;
 			default:
 					; /* no action */
@@ -1616,6 +1626,323 @@ int sem_list_schema(token_list *t_list)
 	} // Invalid statement
 
   return rc;
+}
+
+int sem_delete_from(token_list *t_list)
+{
+	int rc = 0, operation;
+	int record_size = 0, offset = 0, test_input = 0;
+	char *test_string = NULL;
+	token_list *test;
+	token_list *use;
+	tpd_entry *tab_entry = NULL;
+	cd_entry *test_entry = NULL;
+	FILE *fhandle = NULL;
+	FILE *fchange = NULL;
+	bool done = false;
+
+	test = t_list; 
+	use = t_list;
+	printf("we got to the function\n");
+	if((tab_entry = get_tpd_from_list(test->tok_string)) == NULL) //checks to see if table exists
+	{
+		rc = TABLE_NOT_EXIST;
+		test->tok_value = INVALID;
+		use->tok_value = INVALID;
+		done = true;
+		free(tab_entry);
+	}
+	else
+	{
+		char* extensionName = ".tab";
+		char* TableName = (char*)malloc(strlen(tab_entry->table_name) + strlen(extensionName) + 1);
+		strcat(TableName, tab_entry->table_name);
+		strcat(TableName, extensionName);
+		printf("we found the table. file name: %s\n", TableName);
+
+		if((fhandle = fopen(TableName, "rbc")) == NULL)
+		{
+			rc = FILE_OPEN_ERROR;
+			done = true;
+			test->tok_value = INVALID;
+			use->tok_value = INVALID;			
+			printf("couldn't open it\n");
+		}
+
+		test = test->next; //check next value to see if where condition exists
+
+		if(test->tok_class == 7)
+		{	
+			while((!rc) && (!done))
+			{
+				if((fseek(fhandle, 4, SEEK_SET)) == 0) 
+				{
+					printf("look for record size");
+					fread(&record_size, sizeof(int), 1, fhandle);
+				}//read in the record size of the file
+
+				if((fseek(fhandle, 12, SEEK_SET)) == 0)
+				{
+					fread(&offset, sizeof(int), 1, fhandle);
+				}
+				printf("Record size: %d\n", record_size);
+				printf("Offset: %d\n", offset);
+
+				fflush(fhandle);
+				fclose(fhandle);
+
+				if((fchange = fopen(TableName, "wbc")) == NULL)
+				{
+					rc = FILE_OPEN_ERROR;
+					done = true;
+					test->tok_value = INVALID;
+				}
+				else
+				{
+					int file_size = 24;
+					int number_records = 0, dummy = 0;
+
+					fwrite(&file_size, sizeof(int), 1, fchange);
+					fwrite(&record_size, sizeof(int), 1, fchange);
+					fwrite(&number_records, sizeof(int), 1, fchange);
+					fwrite(&offset, sizeof(int), 1, fchange);
+					fwrite(&tab_entry->tpd_flags, sizeof(int), 1, fchange);
+					fwrite(&dummy, sizeof(int), 1, fchange);
+
+					done = true;
+				}
+				fflush(fchange);
+				fclose(fchange);
+
+				free(TableName);
+				free(tab_entry);
+
+			}//enter loop after file is opened and table exists
+		}//statement: delete from TABLE_NAME
+		else if(test->tok_value == K_WHERE)
+		{
+			/*
+				1. Check to see if column exists in tpd list
+				2. if yes, then next token should be a relation operator
+				   if no, terminate the delete
+				3. check to see if data value matches the input (either a constant or keyword, 
+					then the tok_class has to match the constant if it is one or has to match NULL)
+				   a. open for loop to iterate through cd_entry (keep track of which column we are on)
+				   b. check to see if the column name matches, if not continue iterating
+				   c. when found, assign that column number (for later)
+				4. if success, then assign data value to variable and column name to variable
+				5. open file with rbc
+				6. send to appropriate relational operator loop
+				7. use the select tab for loop to find the column in question (keep track of which row)
+				8. find the value and assign it to a variable (one variable points to the row, the other
+				   iterates through the row)
+				9. do comparison
+				   a. if true, read in the last line to variables and assign them to the row that
+				      passes the comparison
+				      a1. use those variables to write over the current line
+				      a2. change the file size 
+				      a3. clear out last line variables
+				   b. if false, continue on
+			*/
+			
+			while((!rc) && (!done))
+			{
+				int file_size = 0, rows_inserted = 0;
+				if((fseek(fhandle, 0, SEEK_SET)) == 0)
+				{
+					fread(&file_size, sizeof(int), 1, fhandle);
+				}
+				if((fseek(fhandle, 4, SEEK_SET)) == 0) 
+				{
+					fread(&record_size, sizeof(int), 1, fhandle);
+				}
+				if((fseek(fhandle, 8, SEEK_SET)) == 0)
+				{
+					fread(&rows_inserted, sizeof(int), 1, fhandle);
+				} 
+				if((fseek(fhandle, 12, SEEK_SET)) == 0)
+				{
+					fread(&offset, sizeof(int), 1, fhandle);
+				}
+				printf("Record size: %d\n", record_size);
+				printf("Offset: %d\n", offset);
+				printf("File Size: %d\n", file_size);
+				printf("Rows in Table: %d\n", rows_inserted);
+				fflush(fhandle);
+				fclose(fhandle);
+
+				
+				char *column = test->tok_string;
+				int *column_lengths = new int[rows_inserted];
+				int *column_type = new int[rows_inserted];
+				int *column_not_null = new int[rows_inserted];
+				int columns = tab_entry->num_columns, i;
+				int column_number = 0;
+				bool foundColumn = false;
+
+				test = test->next;	
+
+				char *testColumnName = test->tok_string;
+				printf("Input column name = %s\n", testColumnName);		
+
+
+				for(i = 0, test_entry = (cd_entry*)((char*)tab_entry + tab_entry->cd_offset);
+								i < tab_entry->num_columns; i++, test_entry++)
+				{
+					column_not_null[i] = test_entry->not_null;
+					column_lengths[i] = test_entry->col_len;
+					printf("column length = %d\n", column_lengths[i]);
+					column_type[i] = test_entry->col_type;
+					char *tableColumnName = test_entry->col_name;
+					if(strcmp(testColumnName,tableColumnName) == 0)
+					{
+						column_number = i+1;
+						foundColumn = true;
+					}
+			
+				}
+
+				if(foundColumn)
+				{
+					printf("It is at column %d\n", column_number);
+					test = test->next;
+					if(test->tok_class != 3)
+					{
+						rc = INVALID_OPERATOR;
+						test->tok_value = INVALID;
+						done = true;
+					}
+					else
+					{
+						operation = test->tok_value;
+						printf("Operation is: %d\n", operation);
+						test = test->next;
+						if((test->tok_class != 1) && (test->tok_class != 5))
+						{
+							printf("the syntax is not correct\n");
+							rc = INVALID_DELETE_SYNTAX;
+							test->tok_value = INVALID;
+							done = true;
+						}
+						else
+						{
+							printf("test->tok_value is %d\n", test->tok_value);
+							printf("column_type is %d\n", column_type[column_number-1]);
+							if(test->tok_class == 5)
+							{
+								if((test->tok_value == INT_LITERAL) && (column_type[column_number-1] == T_INT))
+								{
+									test_input = atoi(test->tok_string);
+									printf("test input is: %d\n", test_input);
+									if((fchange = fopen(TableName, "rbc")) == NULL)
+									{
+										rc = FILE_OPEN_ERROR;
+										done = true;
+										use->tok_value = INVALID;			
+										printf("couldn't open it\n");
+									}
+									else
+									{
+										int position = offset;
+										int input_length = 0;
+										int counter = 0;
+										int int_input;
+
+										for(i = 0; i < column_number; i++)
+										{
+											if(column_number == 1)
+											{
+												position += 1;
+												i == column_number+1;
+											}
+											else
+											{
+												printf("column_lengths[%d]: %d\n", i, column_lengths[i]);
+												position += column_lengths[i-1]+1;
+												printf("position is: %d\n", position);
+											}
+										}
+										printf("position is: %d\n", position);
+									/*	for(i = 0; i < rows_inserted; i++)
+										{
+											if((fseek(fchange, position, SEEK_SET)) == 0)
+											{
+												fread(&char_input, column_lengths[column_number-1], 1, fchange);
+ 											}
+										}*/
+									}
+								}
+								if((test->tok_value == STRING_LITERAL) && (column_type[column_number-1] == T_CHAR) && (operation == 74))
+								{
+									test_string = test->tok_string;
+									printf("test input is: %s\n", test_string);
+									if((fchange = fopen(TableName, "rbc")) == NULL)
+									{
+										rc = FILE_OPEN_ERROR;
+										done = true;
+										use->tok_value = INVALID;			
+										printf("couldn't open it\n");
+									}
+									else
+									{
+										int position = offset;
+										int input_length = 0;
+										int counter = 0;
+										char *char_input = NULL;
+
+										for(i = 0; i < column_number; i++)
+										{
+											if(column_number == 1)
+											{
+												position += 1;
+												i == column_number;
+											}
+											else
+											{
+												printf("column_lengths[%d]: %d\n", i, column_lengths[i]);
+												position += column_lengths[i-1]+1;
+												printf("position is: %d\n", position);
+											}
+										}
+										printf("position is: %d\n", position);
+										char_input = (char*)malloc(column_lengths[column_number-1]);
+									/*	for(i = 0; i < rows_inserted; i++)
+										{
+											if((fseek(fchange, position, SEEK_SET)) == 0)
+											{
+												fread(&char_input, column_lengths[column_number-1], 1, fchange);
+ 											}
+										}*/
+									}
+								}
+								printf("correct type!\n");
+							}
+							if((test->tok_class == 1) && (test->tok_value == K_NULL) 
+								&& (column_not_null[column_number-1] == 0))
+							{
+
+								printf("correct type!\n");
+							}
+							
+							done = true;
+						}
+					}
+
+
+				}
+				else
+				{
+					rc = COLUMN_NOT_EXIST;
+					test->tok_value = INVALID;
+					done = true;
+					printf("the column doesn't exist!\n");
+				}
+			}//while no error and not done
+
+		}//statement: delete from TABLE_NAME WHERE ....
+		
+	}
+	return rc;
 }
 
 int initialize_tpd_list()
