@@ -361,6 +361,12 @@ int do_semantic(token_list *tok_list)
 		cur_cmd = DELETE;
 		cur = cur->next->next; /*moves pointer to table keyword*/
 	}
+	else if(cur->tok_value == K_UPDATE)
+	{
+		printf("UPDATE statement\n");
+		cur_cmd = UPDATE;
+		cur = cur->next;
+	}
 	else
   	{
 		printf("Invalid statement\n");
@@ -392,6 +398,9 @@ int do_semantic(token_list *tok_list)
 						break;
 			case DELETE:
 						rc = sem_delete_from(cur);
+						break;
+			case UPDATE:
+						rc = sem_update_table(cur);
 						break;
 			default:
 					; /* no action */
@@ -1814,7 +1823,7 @@ int sem_delete_from(token_list *t_list)
 										rc = FILE_OPEN_ERROR;
 										done = true;
 										use->tok_value = INVALID;			
-										printf("couldn't open it\n");
+									//	printf("couldn't open it\n");
 									}
 									else
 									{
@@ -1842,6 +1851,7 @@ int sem_delete_from(token_list *t_list)
 										int placement = 0;
 										int rows = 0;
 										int matches = 0;
+										int end_position = record_size;
 
 										line_input = (char*)malloc(record_size);
 
@@ -1855,46 +1865,157 @@ int sem_delete_from(token_list *t_list)
 											{
 												placement += record_size;
 											}//determines where to replace the row if needed
-											printf("placement: %d\n", placement);
+										//	printf("placement: %d\n", placement);
 
 											if((fseek(fchange, position, SEEK_SET)) == 0)
 											{
 												fread(&int_input, column_lengths[column_number-1], 1, fchange);
 											//	printf("char_input to check: %s\n", char_input);
-												if(strcmp(&int_input, test_input) == 0)
+												if(operation == 74)
 												{
-													if((fseek(fchange, -end_position, SEEK_END)) == 0)
+													if(int_input == test_input)
 													{
-														int count = fread(line_input, 1, record_size, fchange);
-													//	printf("line to move is: %s\n", line_input);
-														rows++;
-														if(rows_inserted == 1)
+														if((fseek(fchange, -end_position, SEEK_END)) == 0)
 														{
-															file_size -= record_size;
-															end_position += record_size;
-														}//there's nothing to replace, so just delete
-														else
-														{
-															if((fseek(fchange, placement, SEEK_SET)) == 0)
+															int count = fread(line_input, 1, record_size, fchange);
+														//	printf("line to move is: %s\n", line_input);
+															rows++;
+															if(rows_inserted == 1)
 															{
-																int changes = fwrite(line_input, record_size, 1, fchange);
-															//	printf("%d\n", changes);
 																file_size -= record_size;
-															//	printf("position to replace information is %d\n", placement);
 																end_position += record_size;
-															//	printf("the last line is now at position -%d.\n", end_position);
-															//	printf("file_size is now: %d\n", file_size);
-															}
-														}//more than one row of data in table
-													}//look for the last line to move
-												}//delete stuff
+															}//there's nothing to replace, so just delete
+															else
+															{
+																if((fseek(fchange, placement, SEEK_SET)) == 0)
+																{
+																	int changes = fwrite(line_input, record_size, 1, fchange);
+																//	printf("%d\n", changes);
+																	file_size -= record_size;
+																//	printf("position to replace information is %d\n", placement);
+																	end_position += record_size;
+																//	printf("the last line is now at position -%d.\n", end_position);
+																//	printf("file_size is now: %d\n", file_size);
+																}
+															}//more than one row of data in table
+														}//look for the last line to move
+													}//delete stuff
+												}//relational value was '='
+												if(operation == 75)
+												{
+													if(int_input < test_input)
+													{
+														if((fseek(fchange, -end_position, SEEK_END)) == 0)
+														{
+															int count = fread(line_input, 1, record_size, fchange);
+														//	printf("line to move is: %s\n", line_input);
+															rows++;
+															if(rows_inserted == 1)
+															{
+																file_size -= record_size;
+																end_position += record_size;
+															}//there's nothing to replace, so just delete
+															else
+															{
+																if((fseek(fchange, placement, SEEK_SET)) == 0)
+																{
+																	int changes = fwrite(line_input, record_size, 1, fchange);
+																//	printf("%d\n", changes);
+																	file_size -= record_size;
+																//	printf("position to replace information is %d\n", placement);
+																	end_position += record_size;
+																//	printf("the last line is now at position -%d.\n", end_position);
+																//	printf("file_size is now: %d\n", file_size);
+																}
+															}//more than one row of data in table
+														}//look for the last line to move
+													}//delete stuff
+												}//relational value was '<'
+												if(operation == 76)
+												{
+													if(int_input < test_input)
+													{
+														if((fseek(fchange, -end_position, SEEK_END)) == 0)
+														{
+															int count = fread(line_input, 1, record_size, fchange);
+														//	printf("line to move is: %s\n", line_input);
+															rows++;
+															if(rows_inserted == 1)
+															{
+																file_size -= record_size;
+																end_position += record_size;
+															}//there's nothing to replace, so just delete
+															else
+															{
+																if((fseek(fchange, placement, SEEK_SET)) == 0)
+																{
+																	int changes = fwrite(line_input, record_size, 1, fchange);
+																//	printf("%d\n", changes);
+																	file_size -= record_size;
+																//	printf("position to replace information is %d\n", placement);
+																	end_position += record_size;
+																//	printf("the last line is now at position -%d.\n", end_position);
+																//	printf("file_size is now: %d\n", file_size);
+																}
+															}//more than one row of data in table
+														}//look for the last line to move
+													}//delete stuff
+												}//relational value was '>'
  											}
  											position += record_size;			
 										}
-									
+										rows_inserted -= rows;
+										printf("Rows changed: %d\n\n", rows);
+										printf("File size is: %d\n", file_size);
+										printf("Record size is: %d\n", record_size);
+										printf("Number of records is: %d\n", rows_inserted);
+										printf("Offset is: %d\n", offset);
+										printf("Tpd flags is: %d\n", tab_entry->tpd_flags);
+										//update the header information
+										if((fseek(fchange, 0, SEEK_SET)) == 0)
+										{
+											fwrite(&file_size, sizeof(int), 1 , fchange);
+											fwrite(&record_size, sizeof(int),1 ,fchange);
+											fwrite(&rows_inserted, sizeof(int), 1 , fchange);
+											fwrite(&offset, sizeof(int), 1, fchange);
+											fwrite(&tab_entry->tpd_flags, sizeof(int), 1, fchange);
+											fwrite(&dummy, sizeof(int), 1, fchange);
+										}
+
+										char *filecontents = NULL;
+										filecontents = (char*)malloc(file_size);
+									//	printf("we did make it?\n");
+										if((fseek(fchange, 0, SEEK_SET)) == 0)
+										{
+									//		printf("we did make it?2\n");
+											int howmany = fread(filecontents, 1, file_size, fchange);
+									//		printf("%d\n", howmany);
+										}
+										fflush(fchange);
+										fclose(fchange);
+
+										const char *newFile = "temporary.tab";
+
+										if((finalize = fopen(newFile, "w+b")) == NULL)
+										{
+											rc = FILE_OPEN_ERROR;
+											done = true;
+											test->tok_value = INVALID;
+										}
+										else
+										{
+											int fileTransfer = fwrite(filecontents, 1, file_size, finalize);
+									//		printf("File transfer # of bytes: %d\n", fileTransfer);
+											
+										}
+										fflush(finalize);
+										fclose(finalize);
+
+										remove(TableName);
+										rename("temporary.tab", TableName);
 									}
-								}
-								if((test->tok_value == STRING_LITERAL) && (column_type[column_number-1] == T_CHAR) && (operation == 74))
+								}//when the comparison is an integer
+								else if((test->tok_value == STRING_LITERAL) && (column_type[column_number-1] == T_CHAR) && (operation == 74))
 								{
 									test_string = test->tok_string;
 									printf("test input is: %s\n", test_string);
@@ -1946,7 +2067,7 @@ int sem_delete_from(token_list *t_list)
 											{
 												placement += record_size;
 											}//determines where to replace the row if needed
-											printf("placement: %d\n", placement);
+										//	printf("placement: %d\n", placement);
 
 											if((fseek(fchange, position, SEEK_SET)) == 0)
 											{
@@ -2032,14 +2153,307 @@ int sem_delete_from(token_list *t_list)
 										remove(TableName);
 										rename("temporary.tab", TableName);
 									}
-								}
+								}//when the comparison is a string
 							}
-							if((test->tok_class == 1) && (test->tok_value == K_NULL) 
+							else if((test->tok_class == 1) && (test->tok_value == K_NULL) 
 								&& (column_not_null[column_number-1] == 0))
 							{
-								printf("correct type!\n");
+								if(column_type[column_number-1] == T_INT)
+								{
+									test_input = atoi(test->tok_string);
+									printf("test input is: %d\n", test_input);
+									if((fchange = fopen(TableName, "rbc")) == NULL)
+									{
+										rc = FILE_OPEN_ERROR;
+										done = true;
+										use->tok_value = INVALID;			
+									//	printf("couldn't open it\n");
+									}
+									else
+									{
+										int position = offset;
+										int input_length = 0;
+										int counter = 0;
+										int int_input = 0;
+										char *line_input = NULL;
+
+										for(i = 0; i < column_number; i++)
+										{
+											if(column_number == 1)
+											{
+												i == column_number+1;
+											}
+											else
+											{
+												printf("column_lengths[%d]: %d\n", i, column_lengths[i]);
+												position += column_lengths[i-1];
+												printf("position is: %d\n", position);
+											}
+										}
+
+										int placement = 0;
+										int rows = 0;
+										int matches = 0;
+										int end_position = record_size;
+
+										line_input = (char*)malloc(record_size);
+
+										for(i = 0; i < rows_inserted; i++)
+										{
+											if(i == 0)
+											{
+												placement = offset;
+											}
+											else
+											{
+												placement += record_size;
+											}//determines where to replace the row if needed
+										//	printf("placement: %d\n", placement);
+
+											if((fseek(fchange, position, SEEK_SET)) == 0)
+											{
+												fread(&int_input, column_lengths[column_number-1], 1, fchange);
+											//	printf("char_input to check: %s\n", char_input);
+												if(operation == 74)
+												{
+													if(int_input == test_input)
+													{
+														if((fseek(fchange, -end_position, SEEK_END)) == 0)
+														{
+															int count = fread(line_input, 1, record_size, fchange);
+														//	printf("line to move is: %s\n", line_input);
+															rows++;
+															if(rows_inserted == 1)
+															{
+																file_size -= record_size;
+																end_position += record_size;
+															}//there's nothing to replace, so just delete
+															else
+															{
+																if((fseek(fchange, placement, SEEK_SET)) == 0)
+																{
+																	int changes = fwrite(line_input, record_size, 1, fchange);
+																//	printf("%d\n", changes);
+																	file_size -= record_size;
+																//	printf("position to replace information is %d\n", placement);
+																	end_position += record_size;
+																//	printf("the last line is now at position -%d.\n", end_position);
+																//	printf("file_size is now: %d\n", file_size);
+																}
+															}//more than one row of data in table
+														}//look for the last line to move
+													}//delete stuff
+												}//relational value was '='
+												else
+												{
+													rc = INVALID_COMPARISON_TO_NULL;
+													test->tok_value = INVALID;
+													done = true;
+												}
+ 											}
+ 											position += record_size;			
+										}
+										rows_inserted -= rows;
+										printf("Rows changed: %d\n\n", rows);
+										printf("File size is: %d\n", file_size);
+										printf("Record size is: %d\n", record_size);
+										printf("Number of records is: %d\n", rows_inserted);
+										printf("Offset is: %d\n", offset);
+										printf("Tpd flags is: %d\n", tab_entry->tpd_flags);
+										//update the header information
+										if((fseek(fchange, 0, SEEK_SET)) == 0)
+										{
+											fwrite(&file_size, sizeof(int), 1 , fchange);
+											fwrite(&record_size, sizeof(int),1 ,fchange);
+											fwrite(&rows_inserted, sizeof(int), 1 , fchange);
+											fwrite(&offset, sizeof(int), 1, fchange);
+											fwrite(&tab_entry->tpd_flags, sizeof(int), 1, fchange);
+											fwrite(&dummy, sizeof(int), 1, fchange);
+										}
+
+										char *filecontents = NULL;
+										filecontents = (char*)malloc(file_size);
+									//	printf("we did make it?\n");
+										if((fseek(fchange, 0, SEEK_SET)) == 0)
+										{
+									//		printf("we did make it?2\n");
+											int howmany = fread(filecontents, 1, file_size, fchange);
+									//		printf("%d\n", howmany);
+										}
+										fflush(fchange);
+										fclose(fchange);
+
+										const char *newFile = "temporary.tab";
+
+										if((finalize = fopen(newFile, "w+b")) == NULL)
+										{
+											rc = FILE_OPEN_ERROR;
+											done = true;
+											test->tok_value = INVALID;
+										}
+										else
+										{
+											int fileTransfer = fwrite(filecontents, 1, file_size, finalize);
+									//		printf("File transfer # of bytes: %d\n", fileTransfer);
+										}
+										fflush(finalize);
+										fclose(finalize);
+
+										remove(TableName);
+										rename("temporary.tab", TableName);
+									}
+								}//when the comparison is an integer
+								else if((column_type[column_number-1] == T_CHAR) && (operation == 74))
+								{
+									test_string = test->tok_string;
+									printf("test input is: %s\n", test_string);
+									if((fchange = fopen(TableName, "rb+")) == NULL)
+									{
+										rc = FILE_OPEN_ERROR;
+										done = true;
+										use->tok_value = INVALID;			
+										printf("couldn't open it\n");
+									}
+									else
+									{
+										int position = offset;
+										int input_length = 0;
+										int counter = 0;
+										char *char_input = NULL;
+										char *line_input = NULL;
+
+										for(i = 0; i < column_number; i++)
+										{
+											if(column_number == 1)
+											{
+												position += 1;
+												i == column_number+1;
+											}
+											else
+											{
+									//			printf("column_lengths[%d]: %d\n", i, column_lengths[i]);
+												position += column_lengths[i-1]+1;
+									//			printf("position is: %d\n", position);
+											}
+										}
+										char_input = (char*)malloc(column_lengths[column_number-1]);
+										line_input = (char*)malloc(record_size);
+
+								//		printf("rows_inserted: %d\n", rows_inserted);
+								//		printf("position: %d\n", position);
+										int placement = 0;
+										int rows = 0;
+										int matches = 0;
+										int end_position = record_size;
+										for(i = 0; i < rows_inserted; i++)
+										{
+											if(i == 0)
+											{
+												placement = offset;
+											}
+											else
+											{
+												placement += record_size;
+											}//determines where to replace the row if needed
+										//	printf("placement: %d\n", placement);
+
+											if((fseek(fchange, position, SEEK_SET)) == 0)
+											{
+												fread(char_input, column_lengths[column_number-1], 1, fchange);
+											//	printf("char_input to check: %s\n", char_input);
+												if(strcmp(char_input, test_string) == 0)
+												{
+													if((fseek(fchange, -end_position, SEEK_END)) == 0)
+													{
+														int count = fread(line_input, 1, record_size, fchange);
+													//	printf("line to move is: %s\n", line_input);
+														rows++;
+														if(rows_inserted == 1)
+														{
+															file_size -= record_size;
+															end_position += record_size;
+														}//there's nothing to replace, so just delete
+														else
+														{
+															if((fseek(fchange, placement, SEEK_SET)) == 0)
+															{
+																int changes = fwrite(line_input, record_size, 1, fchange);
+															//	printf("%d\n", changes);
+																file_size -= record_size;
+															//	printf("position to replace information is %d\n", placement);
+																end_position += record_size;
+															//	printf("the last line is now at position -%d.\n", end_position);
+															//	printf("file_size is now: %d\n", file_size);
+															}
+														}//more than one row of data in table
+													}//look for the last line to move
+												}//delete stuff
+ 											}
+ 											position += record_size;			
+										}
+										rows_inserted -= rows;
+										printf("Rows changed: %d\n\n", rows);
+										printf("File size is: %d\n", file_size);
+										printf("Record size is: %d\n", record_size);
+										printf("Number of records is: %d\n", rows_inserted);
+										printf("Offset is: %d\n", offset);
+										printf("Tpd flags is: %d\n", tab_entry->tpd_flags);
+										//update the header information
+										if((fseek(fchange, 0, SEEK_SET)) == 0)
+										{
+											fwrite(&file_size, sizeof(int), 1 , fchange);
+											fwrite(&record_size, sizeof(int),1 ,fchange);
+											fwrite(&rows_inserted, sizeof(int), 1 , fchange);
+											fwrite(&offset, sizeof(int), 1, fchange);
+											fwrite(&tab_entry->tpd_flags, sizeof(int), 1, fchange);
+											fwrite(&dummy, sizeof(int), 1, fchange);
+										}
+
+										char *filecontents = NULL;
+										filecontents = (char*)malloc(file_size);
+									//	printf("we did make it?\n");
+										if((fseek(fchange, 0, SEEK_SET)) == 0)
+										{
+									//		printf("we did make it?2\n");
+											int howmany = fread(filecontents, 1, file_size, fchange);
+									//		printf("%d\n", howmany);
+										}
+										fflush(fchange);
+										fclose(fchange);
+
+										const char *newFile = "temporary.tab";
+
+										if((finalize = fopen(newFile, "w+b")) == NULL)
+										{
+											rc = FILE_OPEN_ERROR;
+											done = true;
+											test->tok_value = INVALID;
+										}
+										else
+										{
+											int fileTransfer = fwrite(filecontents, 1, file_size, finalize);
+									//		printf("File transfer # of bytes: %d\n", fileTransfer);
+											
+										}
+										fflush(finalize);
+										fclose(finalize);
+
+										remove(TableName);
+										rename("temporary.tab", TableName);
+									}
+								}//when the comparison is a string
+								else
+								{
+									rc = INVALID_DELETE_SYNTAX;
+									test->tok_value = INVALID;
+								}
 							}
-							
+							else if((test->tok_class == 1) && (test->tok_value == K_NULL) 
+								&& (column_not_null[column_number-1] == 1))
+							{
+								rc = NOT_NULL_PARAMETER;
+								test->tok_value = INVALID;
+							}
 							done = true;
 						}//valid operation check
 					}//valid operation check
@@ -2054,10 +2468,14 @@ int sem_delete_from(token_list *t_list)
 					printf("the column doesn't exist!\n");
 				}
 			}//while no error and not done
-
-		}//statement: delete from TABLE_NAME WHERE ....
-		
+		}//statement: delete from TABLE_NAME WHERE ...	
 	}
+	return rc;
+}
+
+int sem_update_table(token_list *t_list)
+{
+	int rc = 0;
 	return rc;
 }
 
@@ -2122,7 +2540,6 @@ int initialize_tpd_list()
 
 		}
 	}
-    
 	return rc;
 }
 	
