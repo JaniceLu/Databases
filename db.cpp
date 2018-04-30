@@ -1632,6 +1632,7 @@ int sem_delete_from(token_list *t_list)
 {
 	int rc = 0, operation;
 	int record_size = 0, offset = 0, test_input = 0;
+	int file_size = 0, number_records = 0, dummy = 0;
 	char *test_string = NULL;
 	token_list *test;
 	token_list *use;
@@ -1677,16 +1678,15 @@ int sem_delete_from(token_list *t_list)
 			{
 				if((fseek(fhandle, 4, SEEK_SET)) == 0) 
 				{
-					printf("look for record size");
+			//		printf("look for record size");
 					fread(&record_size, sizeof(int), 1, fhandle);
 				}//read in the record size of the file
-
 				if((fseek(fhandle, 12, SEEK_SET)) == 0)
 				{
 					fread(&offset, sizeof(int), 1, fhandle);
 				}
 				printf("Record size: %d\n", record_size);
-				printf("Offset: %d\n", offset);
+			//	printf("Offset: %d\n", offset);
 
 				fflush(fhandle);
 				fclose(fhandle);
@@ -1699,9 +1699,6 @@ int sem_delete_from(token_list *t_list)
 				}
 				else
 				{
-					int file_size = 24;
-					int number_records = 0, dummy = 0;
-
 					fwrite(&file_size, sizeof(int), 1, fchange);
 					fwrite(&record_size, sizeof(int), 1, fchange);
 					fwrite(&number_records, sizeof(int), 1, fchange);
@@ -1791,7 +1788,7 @@ int sem_delete_from(token_list *t_list)
 				{
 					column_not_null[i] = test_entry->not_null;
 					column_lengths[i] = test_entry->col_len;
-					printf("column length = %d\n", column_lengths[i]);
+				//	printf("column length = %d\n", column_lengths[i]);
 					column_type[i] = test_entry->col_type;
 					char *tableColumnName = test_entry->col_name;
 					if(strcmp(testColumnName,tableColumnName) == 0)
@@ -1815,7 +1812,7 @@ int sem_delete_from(token_list *t_list)
 					else
 					{
 						operation = test->tok_value;
-						printf("Operation is: %d\n", operation);
+					//	printf("Operation is: %d\n", operation);
 						test = test->next;
 						if((test->tok_class != 1) && (test->tok_class != 5))
 						{
@@ -1826,8 +1823,8 @@ int sem_delete_from(token_list *t_list)
 						}
 						else
 						{
-							printf("test->tok_value is %d\n", test->tok_value);
-							printf("column_type is %d\n", column_type[column_number-1]);
+						//	printf("test->tok_value is %d\n", test->tok_value);
+						//	printf("column_type is %d\n", column_type[column_number-1]);
 							if(test->tok_class == 5)
 							{
 								if((test->tok_value == INT_LITERAL) && (column_type[column_number-1] == T_INT))
@@ -1876,7 +1873,7 @@ int sem_delete_from(token_list *t_list)
 								{
 									test_string = test->tok_string;
 									printf("test input is: %s\n", test_string);
-									if((fchange = fopen(TableName, "rbc")) == NULL)
+									if((fchange = fopen(TableName, "rb+")) == NULL)
 									{
 										rc = FILE_OPEN_ERROR;
 										done = true;
@@ -1889,33 +1886,95 @@ int sem_delete_from(token_list *t_list)
 										int input_length = 0;
 										int counter = 0;
 										char *char_input = NULL;
+										char *line_input = NULL;
 
 										for(i = 0; i < column_number; i++)
 										{
 											if(column_number == 1)
 											{
 												position += 1;
-												i == column_number;
+												i == column_number+1;
 											}
 											else
 											{
-												printf("column_lengths[%d]: %d\n", i, column_lengths[i]);
+									//			printf("column_lengths[%d]: %d\n", i, column_lengths[i]);
 												position += column_lengths[i-1]+1;
-												printf("position is: %d\n", position);
+									//			printf("position is: %d\n", position);
 											}
 										}
-										printf("position is: %d\n", position);
 										char_input = (char*)malloc(column_lengths[column_number-1]);
-									/*	for(i = 0; i < rows_inserted; i++)
+										line_input = (char*)malloc(record_size);
+
+								//		printf("rows_inserted: %d\n", rows_inserted);
+										printf("position: %d\n", position);
+										int placement = 0;
+										int rows = 0;
+										int matches = 0;
+										int end_position = record_size;
+										for(i = 0; i < rows_inserted; i++)
 										{
+
+											if(i == 0)
+											{
+												placement = offset+1;
+											}
+											else
+											{
+												placement += record_size;
+											}//determines where to replace the row if needed
+											printf("placement: %d\n", placement);
+
+
 											if((fseek(fchange, position, SEEK_SET)) == 0)
 											{
-												fread(&char_input, column_lengths[column_number-1], 1, fchange);
+
+												fread(char_input, column_lengths[column_number-1], 1, fchange);
+												printf("char_input to check: %s\n", char_input);
+												if(strcmp(char_input, test_string) == 0)
+												{
+													if((fseek(fchange, -end_position, SEEK_END)) == 0)
+													{
+														int count = fread(line_input, 1, record_size, fchange);
+														printf("line to move is: %s\n", line_input);
+														rows++;
+														if((fseek(fchange, placement, SEEK_SET)) == 0)
+														{
+														//	int changes = fwrite(line_input, record_size, 1, fchange);
+														//	printf("%d\n", changes);
+															file_size -= record_size;
+															printf("position to replace information is %d\n", placement);
+															end_position += (record_size);
+															printf("the last line is now at position -%d.\n", end_position);
+															printf("file_size is now: %d\n", file_size);
+														}
+														
+													}
+												}//delete stuff
  											}
-										}*/
+ 											position += record_size;
+ 											
+										}
+										rows_inserted -= rows;
+										printf("Rows changed: %d\n\n", rows);
+										printf("File size is: %d\n", file_size);
+										printf("Record size is: %d\n", record_size);
+										printf("Number of records is: %d\n", rows_inserted);
+										printf("Offset is: %d\n", offset);
+										printf("Tpd flags is: %d\n", tab_entry->tpd_flags);
+										//update the header information
+										if((fseek(fchange, 0, SEEK_SET)) == 0)
+										{
+										//	fwrite(&file_size, sizeof(int), 1 , fchange);
+										//	fwrite(&record_size, sizeof(int),1 ,fchange);
+										//	fwrite(&rows_inserted, sizeof(int), 1 , fchange);
+										//	fwrite(&offset, sizeof(int), 1, fchange);
+										//	fwrite(&tab_entry->tpd_flags, sizeof(int), 1, fchange);
+										//	fwrite(&dummy, sizeof(int), 1, fchange);
+										}
+										fflush(fchange);
+										fclose(fchange);
 									}
 								}
-								printf("correct type!\n");
 							}
 							if((test->tok_class == 1) && (test->tok_value == K_NULL) 
 								&& (column_not_null[column_number-1] == 0))
