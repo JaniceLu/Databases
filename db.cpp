@@ -3050,9 +3050,8 @@ int sem_update_table(token_list *t_list)
 											{
 												operation = test->tok_value;
 												test = test->next;
-												int table_check_integer = 0;
-												int input_check_integer = atoi(test->tok_string);
-												printf("current token is: %d\n", input_check_integer);
+												
+												
 												if((test->tok_class != keyword) && (test->tok_class != constant))
 												{
 													rc = INVALID_UPDATE_SYNTAX;
@@ -3082,6 +3081,9 @@ int sem_update_table(token_list *t_list)
 														if((operation == S_EQUAL) && (test->tok_value == INT_LITERAL) && (column_type[column_number_where-1] == T_INT))
 														{
 													//		printf("%s %d %d\n", test->tok_string, operation, column_type[column_number_where-1]);
+															int table_check_integer = 0;
+															int input_check_integer = atoi(test->tok_string);
+															printf("current token is: %d\n", input_check_integer);
 															int position_where = 0;
 															if(columns == column_number_where)
 															{
@@ -3133,6 +3135,10 @@ int sem_update_table(token_list *t_list)
 														else if((operation == S_EQUAL) && (test->tok_value == STRING_LITERAL) && (column_type[column_number_where-1] == T_CHAR))
 														{
 															printf("%s %d %d\n", test->tok_string, operation, column_type[column_number_where-1]);
+															char *table_check_string = NULL;
+															char *input_check_string = NULL;
+															input_check_string = (char*)malloc(strlen(test->tok_string)+1);
+															strcat(input_check_string, test->tok_string);
 														//	if(test_input != table_input)
 													//		{
 													//			if((fseek(fchange, position, SEEK_SET)) == 0)
@@ -3156,6 +3162,9 @@ int sem_update_table(token_list *t_list)
 														else if((operation == S_GREATER) && (test->tok_value == INT_LITERAL) && (column_type[column_number_where-1] == T_INT))
 														{
 															printf("%s %d %d\n", test->tok_string, operation, column_type[column_number_where-1]);
+															int table_check_integer = 0;
+															int input_check_integer = atoi(test->tok_string);
+															printf("current token is: %d\n", input_check_integer);
 															int position_where = 0;
 															if(columns == column_number_where)
 															{
@@ -3207,10 +3216,17 @@ int sem_update_table(token_list *t_list)
 														else if((operation == S_GREATER) && (test->tok_value == STRING_LITERAL) && (column_type[column_number_where-1] == T_CHAR))
 														{
 															printf("%s %d %d\n", test->tok_string, operation, column_type[column_number_where-1]);
+															char *table_check_string = NULL;
+															char *input_check_string = NULL;
+															input_check_string = (char*)malloc(strlen(test->tok_string)+1);
+															strcat(input_check_string, test->tok_string);
 														}
 														else if((operation == S_LESS) && (test->tok_value == INT_LITERAL) && (column_type[column_number_where-1] == T_INT))	
 														{
 															printf("%s %d %d\n", test->tok_string, operation, column_type[column_number_where-1]);
+															int table_check_integer = 0;
+															int input_check_integer = atoi(test->tok_string);
+															printf("current token is: %d\n", input_check_integer);
 															int position_where = 0;
 															if(columns == column_number_where)
 															{
@@ -3262,6 +3278,10 @@ int sem_update_table(token_list *t_list)
 														else if((operation == S_LESS) && (test->tok_value == STRING_LITERAL) && (column_type[column_number_where-1] == T_CHAR))
 														{
 															printf("%s %d %d\n", test->tok_string, operation, column_type[column_number_where-1]);
+															char *table_check_string = NULL;
+															char *input_check_string = NULL;
+															input_check_string = (char*)malloc(strlen(test->tok_string)+1);
+															strcat(input_check_string, test->tok_string);
 														}
 														else
 														{
