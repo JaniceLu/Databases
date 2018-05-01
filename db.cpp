@@ -1781,7 +1781,7 @@ int sem_delete_from(token_list *t_list)
 				char *testColumnName = (char*)malloc(strlen(test->tok_string) + 1);
 				strcat(testColumnName, test->tok_string);
 
-				printf("Input column name = %s\n", testColumnName);		
+			//	printf("Input column name = %s\n", testColumnName);		
 
 
 				for(i = 0, test_entry = (cd_entry*)((char*)tab_entry + tab_entry->cd_offset);
@@ -1789,7 +1789,7 @@ int sem_delete_from(token_list *t_list)
 				{
 					column_not_null[i] = test_entry->not_null;
 					column_lengths[i] = test_entry->col_len;
-					printf("column length = %d\n", column_lengths[i]);
+				//	printf("column length = %d\n", column_lengths[i]);
 					column_type[i] = test_entry->col_type;
 					char *tableColumnName = NULL;
 					tableColumnName = (char*)malloc(strlen(test_entry->col_name)+1);
@@ -1805,7 +1805,7 @@ int sem_delete_from(token_list *t_list)
 
 				if(foundColumn)
 				{
-					printf("Column %d\n", column_number);
+				//	printf("Column %d\n", column_number);
 					test = test->next;
 					if(test->tok_class != 3)
 					{
@@ -1820,7 +1820,7 @@ int sem_delete_from(token_list *t_list)
 						test = test->next;
 						if((test->tok_class != 1) && (test->tok_class != 5))
 						{
-							printf("the syntax is not correct\n");
+						//	printf("the syntax is not correct\n");
 							rc = INVALID_DELETE_SYNTAX;
 							test->tok_value = INVALID;
 							done = true;
@@ -1834,7 +1834,7 @@ int sem_delete_from(token_list *t_list)
 								if((test->tok_value == INT_LITERAL) && (column_type[column_number-1] == T_INT))
 								{
 									test_input = atoi(test->tok_string);
-									printf("test input is: %d\n", test_input);
+								//	printf("test input is: %d\n", test_input);
 									if((fchange = fopen(TableName, "rb+")) == NULL)
 									{
 										rc = FILE_OPEN_ERROR;
@@ -1861,11 +1861,10 @@ int sem_delete_from(token_list *t_list)
 											}
 											else
 											{
-												printf("column_lengths[%d]: %d\n", i, column_lengths[i]);
-												printf("position is: %d\n", position);
+											//	printf("column_lengths[%d]: %d\n", i, column_lengths[i]);
+											//	printf("position is: %d\n", position);
 												position += column_lengths[i];
-												printf("position now is: %d\n", position);
-												
+											//	printf("position now is: %d\n", position);
 											}
 										}
 										int int_input = 0;
@@ -1887,13 +1886,13 @@ int sem_delete_from(token_list *t_list)
 											{
 												placement += record_size;
 											}//determines where to replace the row if needed
-											printf("placement: %d\n", placement);
-											printf("position: %d\n", position);
+									//		printf("placement: %d\n", placement);
+									//		printf("position: %d\n", position);
 
 											if((fseek(fchange, position, SEEK_SET)) == 0)
 											{
 												fread(&int_input, sizeof(int), 1, fchange);
-												printf("int_input to check: %d\n", int_input);
+										//		printf("int_input to check: %d\n", int_input);
 												if(operation == 74)
 												{
 													if(int_input == test_input)
@@ -1923,15 +1922,15 @@ int sem_delete_from(token_list *t_list)
 																	if((fseek(fchange, position, SEEK_SET)) == 0)
 																	{
 																		fread(&int_input, sizeof(int), 1, fchange);
-																		printf("check replaced row value: %d\n", int_input);
+																	//	printf("check replaced row value: %d\n", int_input);
 																		if(int_input != test_input)
 																		{
-																			printf("The values do not match, continue.\n");
+																	//		printf("The values do not match, continue.\n");
 																			position += record_size;
 																		}
 																		else if(int_input == test_input)
 																		{
-																			printf("The values do match, replace this value!\n");
+																	//		printf("The values do match, replace this value!\n");
 																			placement -= record_size;
 																		}
 																	}
@@ -1941,7 +1940,7 @@ int sem_delete_from(token_list *t_list)
 														else if(((fseek(fchange, -end_position, SEEK_END)) == 0) && (check_position == initial_file_size))
 														{
 															rows++;
-															printf("The last line, just exclude from the result!\n");
+														//	printf("The last line, just exclude from the result!\n");
 															file_size -= record_size;
 															break;
 														}
@@ -1981,15 +1980,15 @@ int sem_delete_from(token_list *t_list)
 																	if((fseek(fchange, position, SEEK_SET)) == 0)
 																	{
 																		fread(&int_input, sizeof(int), 1, fchange);
-																		printf("check replaced row value: %d\n", int_input);
+																	//	printf("check replaced row value: %d\n", int_input);
 																		if(int_input < test_input)
 																		{
-																			printf("The values do not match, continue.\n");
+																	//		printf("The values do not match, continue.\n");
 																			position += record_size;
 																		}
 																		else
 																		{
-																			printf("The values do match, replace this value!\n");
+																	//		printf("The values do match, replace this value!\n");
 																			placement -= record_size;
 																		}
 																	}
@@ -1999,7 +1998,7 @@ int sem_delete_from(token_list *t_list)
 														else if(((fseek(fchange, -end_position, SEEK_END)) == 0) && (check_position == initial_file_size))
 														{
 															rows++;
-															printf("The last line, just exclude from the result!\n");
+														//	printf("The last line, just exclude from the result!\n");
 															file_size -= record_size;
 															break;
 														}
@@ -2039,15 +2038,15 @@ int sem_delete_from(token_list *t_list)
 																	if((fseek(fchange, position, SEEK_SET)) == 0)
 																	{
 																		fread(&int_input, sizeof(int), 1, fchange);
-																		printf("check replaced row value: %s\n", int_input);
+																	//	printf("check replaced row value: %s\n", int_input);
 																		if(int_input > test_input)
 																		{
-																			printf("The values do not match, continue.\n");
+																	//		printf("The values do not match, continue.\n");
 																			position += record_size;
 																		}
 																		else
 																		{
-																			printf("The values do match, replace this value!\n");
+																	//		printf("The values do match, replace this value!\n");
 																			placement -= record_size;
 																		}
 																	}
@@ -2057,7 +2056,7 @@ int sem_delete_from(token_list *t_list)
 														else if(((fseek(fchange, -end_position, SEEK_END)) == 0) && (check_position == initial_file_size))
 														{
 															rows++;
-															printf("The last line, just exclude from the result!\n");
+														//	printf("The last line, just exclude from the result!\n");
 															file_size -= record_size;
 															break;
 														}
@@ -2127,13 +2126,13 @@ int sem_delete_from(token_list *t_list)
 								else if((test->tok_value == STRING_LITERAL) && (column_type[column_number-1] == T_CHAR) && (operation == 74))
 								{
 									test_string = test->tok_string;
-									printf("test input is: %s\n", test_string);
+								//	printf("test input is: %s\n", test_string);
 									if((fchange = fopen(TableName, "rb+")) == NULL)
 									{
 										rc = FILE_OPEN_ERROR;
 										done = true;
 										use->tok_value = INVALID;			
-										printf("couldn't open it\n");
+								//		printf("couldn't open it\n");
 									}
 									else
 									{
@@ -2178,12 +2177,12 @@ int sem_delete_from(token_list *t_list)
 											{
 												placement += record_size;
 											}//determines where to replace the row if needed
-											printf("placement: %d\n", placement);
-											printf("position: %d\n", position);
+									//		printf("placement: %d\n", placement);
+									//		printf("position: %d\n", position);
 											if((fseek(fchange, position, SEEK_SET)) == 0)
 											{
 												fread(char_input, column_lengths[column_number-1], 1, fchange);
-												printf("char_input to check: %s\n", char_input);
+									//			printf("char_input to check: %s\n", char_input);
 
 												if(strcmp(char_input, test_string) == 0)
 												{
@@ -2191,8 +2190,8 @@ int sem_delete_from(token_list *t_list)
 													if(((fseek(fchange, -end_position, SEEK_END)) == 0) && (check_position != initial_file_size))
 													{
 														int count = fread(line_input, 1, record_size, fchange);
-														printf("copied this much into line input: %d\n",  count);
-														printf("line to move is: %s\n", line_input);
+												//		printf("copied this much into line input: %d\n",  count);
+												//		printf("line to move is: %s\n", line_input);
 														rows++;
 														if(rows_inserted == 1)
 														{
@@ -2203,25 +2202,25 @@ int sem_delete_from(token_list *t_list)
 														{
 															if((fseek(fchange, placement, SEEK_SET)) == 0)
 															{
-																printf("position to replace information is %d\n", placement);
+														//		printf("position to replace information is %d\n", placement);
 																int changes = fwrite(line_input, record_size, 1, fchange);
 															//	printf("%d\n", changes);
 																file_size -= record_size;
 																end_position += record_size;
-																printf("the last line is now at position -%d.\n", end_position);
-																printf("file_size is now: %d\n", file_size);
+														//		printf("the last line is now at position -%d.\n", end_position);
+														//		printf("file_size is now: %d\n", file_size);
 																if((fseek(fchange, position, SEEK_SET)) == 0)
 																{
 																	fread(char_input, column_lengths[column_number-1], 1, fchange);
-																	printf("check replaced row value: %s\n", char_input);
+														//			printf("check replaced row value: %s\n", char_input);
 																	if(strcmp(char_input, test_string) != 0)
 																	{
-																		printf("The values do not match, continue.\n");
+														//				printf("The values do not match, continue.\n");
 																		position += record_size;
 																	}
 																	else if(strcmp(char_input, test_string) == 0)
 																	{
-																		printf("The values do match, replace this value!\n");
+														//				printf("The values do match, replace this value!\n");
 																		placement -= record_size;
 																	}
 
@@ -2232,7 +2231,7 @@ int sem_delete_from(token_list *t_list)
 													else if(((fseek(fchange, -end_position, SEEK_END)) == 0) && (check_position == initial_file_size))
 													{
 														rows++;
-														printf("The last line, just exclude from the result!\n");
+													//	printf("The last line, just exclude from the result!\n");
 														file_size -= record_size;
 														break;
 													}
@@ -2300,9 +2299,8 @@ int sem_delete_from(token_list *t_list)
 							{
 								if(column_type[column_number-1] == T_INT)
 								{
-									test_input = atoi(test->tok_string);
-									printf("test input is: %d\n", test_input);
-									if((fchange = fopen(TableName, "rbc")) == NULL)
+									test_input = 0;
+									if((fchange = fopen(TableName, "rb+")) == NULL)
 									{
 										rc = FILE_OPEN_ERROR;
 										done = true;
@@ -2312,31 +2310,36 @@ int sem_delete_from(token_list *t_list)
 									else
 									{
 										int position = offset;
+									//	printf("position: %d\n", position);
 										int input_length = 0;
 										int counter = 0;
-										int int_input = 0;
+										
 										char *line_input = NULL;
+										char *check_input = NULL;
 
 										for(i = 0; i < column_number; i++)
 										{
 											if(column_number == 1)
 											{
+												position += 1;
 												i == column_number+1;
 											}
 											else
 											{
-												printf("column_lengths[%d]: %d\n", i, column_lengths[i]);
-												position += column_lengths[i-1];
-												printf("position is: %d\n", position);
+											//	printf("column_lengths[%d]: %d\n", i, column_lengths[i]);
+											//	printf("position is: %d\n", position);
+												position += column_lengths[i];
+											//	printf("position now is: %d\n", position);
 											}
 										}
-
+										int int_input = 0;
 										int placement = 0;
 										int rows = 0;
 										int matches = 0;
 										int end_position = record_size;
-
+										
 										line_input = (char*)malloc(record_size);
+										check_input = (char*)malloc(record_size);
 
 										for(i = 0; i < rows_inserted; i++)
 										{
@@ -2348,17 +2351,19 @@ int sem_delete_from(token_list *t_list)
 											{
 												placement += record_size;
 											}//determines where to replace the row if needed
-										//	printf("placement: %d\n", placement);
+									//		printf("placement: %d\n", placement);
+									//		printf("position: %d\n", position);
 
 											if((fseek(fchange, position, SEEK_SET)) == 0)
 											{
-												fread(&int_input, column_lengths[column_number-1], 1, fchange);
-											//	printf("char_input to check: %s\n", char_input);
+												fread(&int_input, sizeof(int), 1, fchange);
+										//		printf("int_input to check: %d\n", int_input);
 												if(operation == 74)
 												{
 													if(int_input == test_input)
 													{
-														if((fseek(fchange, -end_position, SEEK_END)) == 0)
+														int check_position = placement + end_position;
+														if(((fseek(fchange, -end_position, SEEK_END)) == 0) && (check_position != initial_file_size))
 														{
 															int count = fread(line_input, 1, record_size, fchange);
 														//	printf("line to move is: %s\n", line_input);
@@ -2379,19 +2384,42 @@ int sem_delete_from(token_list *t_list)
 																	end_position += record_size;
 																//	printf("the last line is now at position -%d.\n", end_position);
 																//	printf("file_size is now: %d\n", file_size);
+																	if((fseek(fchange, position, SEEK_SET)) == 0)
+																	{
+																		fread(&int_input, sizeof(int), 1, fchange);
+																	//	printf("check replaced row value: %d\n", int_input);
+																		if(int_input != test_input)
+																		{
+																	//		printf("The values do not match, continue.\n");
+																			position += record_size;
+																		}
+																		else if(int_input == test_input)
+																		{
+																	//		printf("The values do match, replace this value!\n");
+																			placement -= record_size;
+																		}
+																	}
 																}
 															}//more than one row of data in table
 														}//look for the last line to move
+														else if(((fseek(fchange, -end_position, SEEK_END)) == 0) && (check_position == initial_file_size))
+														{
+															rows++;
+														//	printf("The last line, just exclude from the result!\n");
+															file_size -= record_size;
+															break;
+														}
 													}//delete stuff
+													else
+													{
+														position += record_size;
+													}
 												}//relational value was '='
-												else
-												{
-													rc = INVALID_COMPARISON_TO_NULL;
-													test->tok_value = INVALID;
-													done = true;
-												}
  											}
- 											position += record_size;			
+ 											else
+ 											{
+ 												printf("couldnt get there\n");
+ 											}			
 										}
 										rows_inserted -= rows;
 										printf("Rows changed: %d\n\n", rows);
@@ -2435,6 +2463,7 @@ int sem_delete_from(token_list *t_list)
 										{
 											int fileTransfer = fwrite(filecontents, 1, file_size, finalize);
 									//		printf("File transfer # of bytes: %d\n", fileTransfer);
+											
 										}
 										fflush(finalize);
 										fclose(finalize);
@@ -2445,8 +2474,7 @@ int sem_delete_from(token_list *t_list)
 								}//when the comparison is an integer
 								else if((column_type[column_number-1] == T_CHAR) && (operation == 74))
 								{
-									test_string = test->tok_string;
-									printf("test input is: %s\n", test_string);
+									test_string = 0;
 									if((fchange = fopen(TableName, "rb+")) == NULL)
 									{
 										rc = FILE_OPEN_ERROR;
@@ -2599,8 +2627,6 @@ int sem_delete_from(token_list *t_list)
 							done = true;
 						}//valid operation check
 					}//valid operation check
-
-
 				}
 				else
 				{
