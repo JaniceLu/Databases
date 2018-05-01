@@ -2835,19 +2835,100 @@ int sem_update_table(token_list *t_list)
 
 								if((fseek(fchange, position, SEEK_SET)) == 0)
 								{
+									//int_input == table_input
 									fread(&table_input, sizeof(int), 1, fchange);
-									test = test->next;
-									printf("token is now: %s\n", test->tok_string);
-									if(test->tok_class == 7)
+									if(test->next->tok_class == 7)
 									{
+										if(test_input == table_input)
+										{
+											int check_position = placement + end_position;
+											if(((fseek(fchange, -end_position, SEEK_END)) == 0) && (check_position != initial_file_size))
+											{
+												int count = fread(line_input, 1, record_size, fchange);
+												rows++;
+												if(rows_inserted == 1)
+												{
+													file_size -= record_size;
+													end_position += record_size;
+												}
+												else
+												{
+													if((fseek(fchange, position, SEEK_SET)) == 0)
+													{
+														fread(&table_input, sizeof(int), 1, fchange);
+														if(table_input != test_input)
+														{
+															position += record_size;
+														}
+														else if(table_input == test_input)
+														{
+															placement -= record_size;
+														}
+													}
+												}//more than one row of data in table
+											}//look for the last line to move
+											else if(((fseek(fchange, -end_position, SEEK_END)) == 0) && (check_position == initial_file_size))
+											{
+												rows++;
+												file_size -= record_size;
+												break;
+											}
+										}
+										else
+										{
+											position += record_size;
+										}
+									} // no where condition, update all
+									else if(test->next->tok_value == K_WHERE)
+									{
+										test = test->next->next;
 
-									}
-									else if(test->tok_value == K_WHERE)
-									{
-										test = test->next;
+										bool foundConditionalColumn = false;
 										char *condition_column = (char*)malloc(strlen(test->tok_string)+1);
 										strcat(condition_column, test->tok_string);
+
 										printf("Where Column is: %s\n", condition_column);
+
+										for(i = 0, test_entry = (cd_entry*)((char*)tab_entry + tab_entry->cd_offset);
+														i < tab_entry->num_columns; i++, test_entry++)
+										{
+									
+											char *tableColumnName = NULL;
+											tableColumnName = (char*)malloc(strlen(test_entry->col_name)+1);
+											strcat(tableColumnName, test_entry->col_name);
+
+											if(strcmp(testColumnName,tableColumnName) == 0)
+											{
+												column_number = i+1;
+												foundConditionalColumn = true;
+											}
+			
+										}
+										if(foundConditionalColumn)
+										{
+											test = test->next;
+											if(test->tok_class != 3)
+											{
+												rc = COLUMN_NOT_EXIST;
+												test->tok_value = INVALID;
+												done = true;
+											}
+											else
+											{
+												operation = test->tok_value;
+												test = test->next;
+												if((test->tok_class != 1) && (test->tok_class != 5))
+												{
+													rc = INVALID_UPDATE_SYNTAX;
+													test->tok_value = INVALID;
+													done = true;
+												}
+												else
+												{
+													
+												}
+											}
+										}
 									}
 									else
 									{
