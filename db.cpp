@@ -3138,26 +3138,55 @@ int sem_update_table(token_list *t_list)
 															char *table_check_string = NULL;
 															char *input_check_string = NULL;
 															input_check_string = (char*)malloc(strlen(test->tok_string)+1);
+															table_check_string = (char*)malloc(column_lengths[column_number_where-1]+1);
 															strcat(input_check_string, test->tok_string);
-														//	if(test_input != table_input)
-													//		{
-													//			if((fseek(fchange, position, SEEK_SET)) == 0)
-													//			{
-													//				int count = fwrite(&test_input, sizeof(int), 1, fchange);
-													//				if((fseek(fchange, position, SEEK_SET)) == 0)
-													//				{
-													//					fread(&table_input, sizeof(int), 1, fchange);
-										//			//					printf("check replaced row value: %d\n", table_input);
-													//				}
-													//				rows++;
-													//				position += record_size;
-													//			}
-													//		}
-													//		else if(test_input == table_input)
-													//		{
-									//				//			printf("The table value is the same as the update value!\n");
-													//			position += record_size;
-													//		}
+															int position_where = 0;
+															if(columns == column_number_where)
+															{
+																position_where = offset+1;
+															}
+															else
+															{
+																position_where = offset;
+															}
+
+															for(i = 0; i < column_number_where; i++)
+															{
+																if(column_number_where == 1)
+																{
+																	position_where += 1;
+																	i == column_number_where+1;
+																}
+																else
+																{
+																	position_where += column_lengths[i];
+																}
+															}
+
+															for(i = 0; i < rows_inserted; i++)
+															{
+																if((fseek(fchange, position_where, SEEK_SET)) == 0)
+																{
+																	fread(table_check_string, column_lengths[column_number_where-1], 1, fchange);
+																	printf("checking where row value: %s\n", table_check_string);
+																}
+																if(strcmp(input_check_string, table_check_string) == 0)
+																{
+																	if(fseek(fchange, position, SEEK_SET) == 0)
+																	{
+																		int count1 = fwrite(&test_input, sizeof(int), 1, fchange);
+																		rows++;
+																		position +=record_size;
+																		position_where += record_size;
+																	}
+																}
+																else
+																{
+																	position +=record_size;
+																	position_where += record_size;
+																}
+
+															}
 														}
 														else if((operation == S_GREATER) && (test->tok_value == INT_LITERAL) && (column_type[column_number_where-1] == T_INT))
 														{
@@ -3219,7 +3248,55 @@ int sem_update_table(token_list *t_list)
 															char *table_check_string = NULL;
 															char *input_check_string = NULL;
 															input_check_string = (char*)malloc(strlen(test->tok_string)+1);
+															table_check_string = (char*)malloc(column_lengths[column_number_where-1]+1);
 															strcat(input_check_string, test->tok_string);
+															int position_where = 0;
+															if(columns == column_number_where)
+															{
+																position_where = offset+1;
+															}
+															else
+															{
+																position_where = offset;
+															}
+
+															for(i = 0; i < column_number_where; i++)
+															{
+																if(column_number_where == 1)
+																{
+																	position_where += 1;
+																	i == column_number_where+1;
+																}
+																else
+																{
+																	position_where += column_lengths[i];
+																}
+															}
+
+															for(i = 0; i < rows_inserted; i++)
+															{
+																if((fseek(fchange, position_where, SEEK_SET)) == 0)
+																{
+																	fread(table_check_string, column_lengths[column_number_where-1], 1, fchange);
+																	printf("checking where row value: %s\n", table_check_string);
+																}
+																if(strcmp(input_check_string, table_check_string) < 0)
+																{
+																	if(fseek(fchange, position, SEEK_SET) == 0)
+																	{
+																		int count1 = fwrite(&test_input, sizeof(int), 1, fchange);
+																		rows++;
+																		position +=record_size;
+																		position_where += record_size;
+																	}
+																}
+																else
+																{
+																	position +=record_size;
+																	position_where += record_size;
+																}
+
+															}
 														}
 														else if((operation == S_LESS) && (test->tok_value == INT_LITERAL) && (column_type[column_number_where-1] == T_INT))	
 														{
@@ -3269,10 +3346,9 @@ int sem_update_table(token_list *t_list)
 																}
 																else
 																{
-																	position +=record_size;
+																	position += record_size;
 																	position_where += record_size;
 																}
-
 															}
 														}
 														else if((operation == S_LESS) && (test->tok_value == STRING_LITERAL) && (column_type[column_number_where-1] == T_CHAR))
@@ -3281,7 +3357,55 @@ int sem_update_table(token_list *t_list)
 															char *table_check_string = NULL;
 															char *input_check_string = NULL;
 															input_check_string = (char*)malloc(strlen(test->tok_string)+1);
+															table_check_string = (char*)malloc(column_lengths[column_number_where-1]+1);
 															strcat(input_check_string, test->tok_string);
+															int position_where = 0;
+															if(columns == column_number_where)
+															{
+																position_where = offset+1;
+															}
+															else
+															{
+																position_where = offset;
+															}
+
+															for(i = 0; i < column_number_where; i++)
+															{
+																if(column_number_where == 1)
+																{
+																	position_where += 1;
+																	i == column_number_where+1;
+																}
+																else
+																{
+																	position_where += column_lengths[i];
+																}
+															}
+
+															for(i = 0; i < rows_inserted; i++)
+															{
+																if((fseek(fchange, position_where, SEEK_SET)) == 0)
+																{
+																	fread(table_check_string, column_lengths[column_number_where-1], 1, fchange);
+																	printf("checking where row value: %s\n", table_check_string);
+																}
+																if(strcmp(input_check_string, table_check_string) > 0)
+																{
+																	if(fseek(fchange, position, SEEK_SET) == 0)
+																	{
+																		int count1 = fwrite(&test_input, sizeof(int), 1, fchange);
+																		rows++;
+																		position +=record_size;
+																		position_where += record_size;
+																	}
+																}
+																else
+																{
+																	position +=record_size;
+																	position_where += record_size;
+																}
+
+															}
 														}
 														else
 														{
