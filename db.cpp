@@ -1083,7 +1083,7 @@ int sem_select_all(token_list *t_list)
 {
 	int rc = 0, record_size = 0, offset = 0, i;
 	int rows_inserted = 4;
-	int column_type, column_length, input_length, counter = 0;
+	int column_length, input_length, counter = 0;
 	char *input = NULL;
 	token_list *read;
 	tpd_entry *tab_entry = NULL;
@@ -1161,7 +1161,7 @@ int sem_select_all(token_list *t_list)
 			{
 				printf("|%-16s", test_entry->col_name);	
 			}
-			
+			printf("column_type[%d] = %d\n", i, column_type[i]);
 		}
 		//print bottom on column name border
 		for(i = 0; i < columns; i++)
@@ -1179,7 +1179,7 @@ int sem_select_all(token_list *t_list)
 		if((fseek(flook, 12, SEEK_SET)) == 0)
 		{
 			fread(&offset, sizeof(int), 1, flook);
-		//	printf("Offset value: %d\n", offset);
+			printf("Offset value: %d\n", offset);
 		}
 
 		int position = offset;
@@ -1193,6 +1193,7 @@ int sem_select_all(token_list *t_list)
 
 		for(i = 0; i < answer; i++)
 		{
+			printf("upper: %d >= %d \n", i, which_one);
 			if(i >= which_one)
 			{
 				index = i%columns;
@@ -1205,17 +1206,19 @@ int sem_select_all(token_list *t_list)
 				length = column_lengths[i];
 			}
 			input_length = 0;
-
+			printf("length: %d\n", length);
 			if((fseek(flook, position, SEEK_SET)) == 0)
 			{
 				fread(&input_length, 1, 1, flook);
+				printf("input_length: %d\n", input_length);
 				counter += 1;
 				position += 1;
 				if((fseek(flook, position, SEEK_SET)) == 0)
 				{
+					printf("%d >= %d \n", i, columns);
 					if(i >= columns)
 					{
-					//	printf("this is the %d row\n", i);
+						printf("this is the %d row\n", i);
 						if(column_type[index] == T_INT)
 						{
 							fflush(stdout);
@@ -1286,6 +1289,7 @@ int sem_select_all(token_list *t_list)
 					}
 					else
 					{
+						printf("column_type[%d] = %d\n", i, column_type[i]);
 						if(column_type[i] == T_INT)
 						{
 							fread(&int_input, sizeof(int), 1, flook);
@@ -1352,6 +1356,10 @@ int sem_select_all(token_list *t_list)
 								counter += length;
 								position += length;			
 							}
+						}
+						else
+						{
+							printf("does anything make it down here?\n");
 						}
 					}
 					
@@ -1642,6 +1650,7 @@ int sem_delete_from(token_list *t_list)
 	int rc = 0, operation;
 	int record_size = 0, offset = 0, test_input = 0;
 	int file_size = 0, number_records = 0, dummy = 0;
+	int initial_file_size = 0;
 	char *test_string = NULL;
 	char *nullify = NULL;
 	token_list *test;
@@ -1735,6 +1744,7 @@ int sem_delete_from(token_list *t_list)
 				if((fseek(fhandle, 0, SEEK_SET)) == 0)
 				{
 					fread(&file_size, sizeof(int), 1, fhandle);
+					initial_file_size = file_size;
 				}
 				if((fseek(fhandle, 4, SEEK_SET)) == 0) 
 				{
@@ -2033,6 +2043,7 @@ int sem_delete_from(token_list *t_list)
 										int counter = 0;
 										char *char_input = NULL;
 										char *line_input = NULL;
+										char *check_input = NULL;
 
 										for(i = 0; i < column_number; i++)
 										{
@@ -2043,13 +2054,14 @@ int sem_delete_from(token_list *t_list)
 											}
 											else
 											{
-									//			printf("column_lengths[%d]: %d\n", i, column_lengths[i]);
+										//		printf("column_lengths[%d]: %d\n", i, column_lengths[i]);
 												position += column_lengths[i-1]+1;
-									//			printf("position is: %d\n", position);
+										//		printf("position is: %d\n", position);
 											}
 										}
 										char_input = (char*)malloc(column_lengths[column_number-1]);
 										line_input = (char*)malloc(record_size);
+										check_input = (char*)malloc(record_size);
 
 								//		printf("rows_inserted: %d\n", rows_inserted);
 								//		printf("position: %d\n", position);
@@ -2067,18 +2079,21 @@ int sem_delete_from(token_list *t_list)
 											{
 												placement += record_size;
 											}//determines where to replace the row if needed
-										//	printf("placement: %d\n", placement);
-
+											printf("placement: %d\n", placement);
+											printf("position: %d\n", position);
 											if((fseek(fchange, position, SEEK_SET)) == 0)
 											{
 												fread(char_input, column_lengths[column_number-1], 1, fchange);
-											//	printf("char_input to check: %s\n", char_input);
+												printf("char_input to check: %s\n", char_input);
+
 												if(strcmp(char_input, test_string) == 0)
 												{
-													if((fseek(fchange, -end_position, SEEK_END)) == 0)
+													int check_position = placement + end_position;
+													if(((fseek(fchange, -end_position, SEEK_END)) == 0) && (check_position != initial_file_size))
 													{
 														int count = fread(line_input, 1, record_size, fchange);
-													//	printf("line to move is: %s\n", line_input);
+														printf("copied this much into line input: %d\n",  count);
+														printf("line to move is: %s\n", line_input);
 														rows++;
 														if(rows_inserted == 1)
 														{
@@ -2089,19 +2104,45 @@ int sem_delete_from(token_list *t_list)
 														{
 															if((fseek(fchange, placement, SEEK_SET)) == 0)
 															{
+																printf("position to replace information is %d\n", placement);
 																int changes = fwrite(line_input, record_size, 1, fchange);
 															//	printf("%d\n", changes);
 																file_size -= record_size;
-															//	printf("position to replace information is %d\n", placement);
 																end_position += record_size;
-															//	printf("the last line is now at position -%d.\n", end_position);
-															//	printf("file_size is now: %d\n", file_size);
+																printf("the last line is now at position -%d.\n", end_position);
+																printf("file_size is now: %d\n", file_size);
+																if((fseek(fchange, position, SEEK_SET)) == 0)
+																{
+																	fread(char_input, column_lengths[column_number-1], 1, fchange);
+																	printf("check replaced row value: %s\n", char_input);
+																	if(strcmp(char_input, test_string) != 0)
+																	{
+																		printf("The values do not match, continue.\n");
+																		position += record_size;
+																	}
+																	else if(strcmp(char_input, test_string) == 0)
+																	{
+																		printf("The values do match, replace this value!\n");
+																		placement -= record_size;
+																	}
+
+																}											
 															}
 														}//more than one row of data in table
 													}//look for the last line to move
+													else if(((fseek(fchange, -end_position, SEEK_END)) == 0) && (check_position == initial_file_size))
+													{
+														rows++;
+														printf("The last line, just exclude from the result!\n");
+														file_size -= record_size;
+														break;
+													}
 												}//delete stuff
- 											}
- 											position += record_size;			
+												else
+												{
+													position += record_size;
+												}
+ 											}		
 										}
 										rows_inserted -= rows;
 										printf("Rows changed: %d\n\n", rows);
@@ -2468,6 +2509,11 @@ int sem_delete_from(token_list *t_list)
 					printf("the column doesn't exist!\n");
 				}
 			}//while no error and not done
+
+
+
+
+
 		}//statement: delete from TABLE_NAME WHERE ...	
 	}
 	return rc;
