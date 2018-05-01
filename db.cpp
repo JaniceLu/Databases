@@ -1128,10 +1128,11 @@ int sem_select_all(token_list *t_list)
 		}
 
 		//array to hold column lengths
-		int *column_lengths = new int[rows_inserted];
-		int *column_type = new int[rows_inserted];
-		//number of columns in table
 		int columns = tab_entry->num_columns;
+		int *column_lengths = new int[columns];
+		int *column_type = new int[columns];
+		//number of columns in table
+		
 		printf("Columns in table: %d \n", columns);
 		char *header = "+----------------";
 		char *end_header = "+----------------+";
@@ -1769,10 +1770,11 @@ int sem_delete_from(token_list *t_list)
 				
 				char *column = (char*)malloc(strlen(test->tok_string)+1);
 				strcat(column, test->tok_string);
-				int *column_lengths = new int[rows_inserted];
-				int *column_type = new int[rows_inserted];
-				int *column_not_null = new int[rows_inserted];
-				int columns = tab_entry->num_columns, i = 0;
+				int columns = tab_entry->num_columns;
+				int *column_lengths = new int[columns];
+				int *column_type = new int[columns];
+				int *column_not_null = new int[columns];
+				int i = 0;
 				int column_number = 0;
 				bool foundColumn = false;
 
@@ -2648,6 +2650,197 @@ int sem_delete_from(token_list *t_list)
 int sem_update_table(token_list *t_list)
 {
 	int rc = 0;
+	int file_size = 0;
+	int rows_inserted = 0;
+	int record_size = 0;
+	int offset = 0;
+	tpd_entry *tab_entry = NULL;
+	cd_entry *test_entry = NULL;
+	token_list *test = NULL;
+
+	FILE *fhandle = NULL;
+
+	bool foundColumn = false;
+	bool done = false;
+
+	test = t_list; 
+
+	if((tab_entry = get_tpd_from_list(test->tok_string)) == NULL) //checks to see if table exists
+	{
+		rc = TABLE_NOT_EXIST;
+		test->tok_value = INVALID;
+		done = true;
+		free(tab_entry);
+	}
+	else
+	{
+		char* extensionName = ".tab";
+		char* TableName = (char*)malloc(strlen(tab_entry->table_name) + strlen(extensionName) + 1);
+		strcat(TableName, tab_entry->table_name);
+		strcat(TableName, extensionName);
+		if((fhandle = fopen(TableName, "rbc")) == NULL)
+		{
+			rc = FILE_OPEN_ERROR;
+			done = true;
+			test->tok_value = INVALID;	
+		}
+		if((fseek(fhandle, 0, SEEK_SET)) == 0)
+		{
+			fread(&file_size, sizeof(int), 1, fhandle);
+		}
+		if((fseek(fhandle, 4, SEEK_SET)) == 0) 
+		{
+			fread(&record_size, sizeof(int), 1, fhandle);
+		}
+		if((fseek(fhandle, 8, SEEK_SET)) == 0)
+		{
+			fread(&rows_inserted, sizeof(int), 1, fhandle);
+		} 
+		if((fseek(fhandle, 12, SEEK_SET)) == 0)
+		{
+			fread(&offset, sizeof(int), 1, fhandle);
+		}
+		printf("Record size: %d\n", record_size);
+		printf("Offset: %d\n", offset);
+		printf("File Size: %d\n", file_size);
+		printf("Rows in Table: %d\n", rows_inserted);
+		test = test->next;
+
+		printf("current token is: %s\n", test->tok_string);
+		if(test->tok_value == K_SET)
+		{
+			int columns = tab_entry->num_columns;
+			int *column_lengths = new int[columns];
+			int *column_type = new int[columns];
+			int *column_not_null = new int[columns];
+			
+			int i = 0;
+			int column_number = 0;
+			int number_of_columns = 0;
+			
+			test = test->next;
+			char *testColumnName = (char*)malloc(strlen(test->tok_string)+1);
+			strcat(testColumnName, test->tok_string);
+			printf("current token is: %s\n", testColumnName);
+
+			for(i = 0, test_entry = (cd_entry*)((char*)tab_entry + tab_entry->cd_offset);
+								i < tab_entry->num_columns; i++, test_entry++)
+			{
+				column_not_null[i] = test_entry->not_null;
+				column_lengths[i] = test_entry->col_len;
+				printf("column length = %d\n", column_lengths[i]);
+				column_type[i] = test_entry->col_type;
+				printf("column type[%d] = %d\n",i, column_type[i]);
+				char *tableColumnName = NULL;
+				tableColumnName = (char*)malloc(strlen(test_entry->col_name)+1);
+				strcat(tableColumnName, test_entry->col_name);
+				printf("%s\n", tableColumnName);
+				if(strcmp(testColumnName,tableColumnName) == 0)
+				{
+					column_number = i+1;
+					foundColumn = true;
+				}
+		
+			}
+
+			if(foundColumn)
+			{
+				test = test->next;
+				if((test->tok_class != 3) && (test->tok_value != 74))
+				{
+					rc = INVALID_OPERATOR;
+					done = true;
+					test->tok_value = INVALID;
+				}
+				else
+				{
+					test = test->next;
+					printf("current token is: %s\n", test->tok_string);
+					if((test->tok_class != 5) && (test->tok_class != 1))
+					{
+						rc = INVALID_TYPE_INSERTED;
+						done = true;
+						test->tok_value = INVALID;
+					}
+					else if((test->tok_class == 1) && (test->tok_value == 16) && (column_not_null[column_number-1] == 1))
+					{
+						printf("this one! 1\ncolumn_type[%d] = %d\n", column_number-1,column_type[column_number-1]);
+						rc = NOT_NULL_PARAMETER;
+						done = true;
+						test->tok_value = INVALID;
+					}
+					else if((test->tok_class == 5) && (test->tok_value == INT_LITERAL) && (column_type[column_number-1] != T_INT))
+					{
+						printf("this one! 2\ncolumn_type[%d] = %d\n", column_number-1,column_type[column_number-1]);
+						rc = INVALID_TYPE_INSERTED;
+						done = true;
+						test->tok_value = INVALID;
+					}
+					else if((test->tok_class == 5) && (test->tok_value == STRING_LITERAL) && (column_type[column_number-1] != T_CHAR))
+					{
+						printf("this one! 3\ncolumn_type[%d] = %d\n", column_number, column_type[column_number-1]);
+						rc = INVALID_TYPE_INSERTED;
+						done = true;
+						test->tok_value = INVALID;
+					}
+					else if((test->tok_class == 5) && (test->tok_value == INT_LITERAL) && (column_type[column_number-1] == T_INT))
+					{
+						//column and input are integer
+						int int_input = atoi(test->tok_string);
+						printf("Input is: %d\n", int_input);
+
+						int position = offset;
+						
+						for(i = 0; i < column_number; i++)
+						{
+							if(column_number == 1)
+							{
+								position += 1;
+								i == column_number+1;
+							}
+							else
+							{
+								position += column_lengths[i];
+							}
+						}
+
+					}
+					else if((test->tok_class == 5) && (test->tok_value == STRING_LITERAL) && (column_type[column_number-1] == T_CHAR))
+					{
+						//column and input are integer
+						char *char_input = NULL;
+						char_input = (char*)malloc(strlen(test->tok_string)+1);
+						strcat(char_input, test->tok_string);
+						printf("Input is: %s\n", char_input);
+
+					}
+					else if((test->tok_class == 1) && (test->tok_value == 16) && (column_type[column_number-1] == T_CHAR))
+					{
+						//null the column value
+						char *char_input = NULL;
+						char_input = (char*)malloc(1);
+						strcat(char_input, "0");
+						printf("%s\n",char_input);
+
+					}
+					else if((test->tok_class == 1) && (test->tok_value == 16) && (column_type[column_number-1] == T_INT))
+					{
+						//null the column value
+						int int_input = 0;
+						printf("%d\n", int_input);
+
+					}
+				}
+			}
+		}
+		else
+		{
+			printf("this one! 4\n");
+			rc = INVALID_UPDATE_SYNTAX;
+			done = true;
+			test->tok_value = INVALID;
+		}
+	}
 	return rc;
 }
 
