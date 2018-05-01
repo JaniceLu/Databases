@@ -2659,6 +2659,7 @@ int sem_update_table(token_list *t_list)
 	token_list *test = NULL;
 
 	FILE *fhandle = NULL;
+	FILE *fchange = NULL;
 
 	bool foundColumn = false;
 	bool done = false;
@@ -2786,24 +2787,77 @@ int sem_update_table(token_list *t_list)
 					else if((test->tok_class == 5) && (test->tok_value == INT_LITERAL) && (column_type[column_number-1] == T_INT))
 					{
 						//column and input are integer
-						int int_input = atoi(test->tok_string);
-						printf("Input is: %d\n", int_input);
-
-						int position = offset;
-						
-						for(i = 0; i < column_number; i++)
+						int test_input = atoi(test->tok_string);
+						printf("Input is: %d\n", test_input);
+						while((!rc) && (!done))
 						{
-							if(column_number == 1)
+							if((fchange = fopen(TableName, "rb+")) == NULL)
 							{
-								position += 1;
-								i == column_number+1;
+								rc = FILE_OPEN_ERROR;
+								done = true;
+								test->tok_value = INVALID;
+							}		
+
+							int table_input = 0;
+							int placement = 0;
+							int rows = 0;
+							int end_position = record_size;
+							int position = offset;
+
+							char *line_input = NULL;
+							char *check_input = NULL;
+							line_input = (char*)malloc(record_size);
+							check_input = (char*)malloc(record_size);
+
+							for(i = 0; i < column_number; i++)
+							{
+								if(column_number == 1)
+								{
+									position += 1;
+									i == column_number+1;
+								}
+								else
+								{
+									position += column_lengths[i];
+								}
 							}
-							else
+
+							for(i = 0; i < rows_inserted; i++)
 							{
-								position += column_lengths[i];
+								if(i == 0)
+								{
+									placement = offset;
+								}
+								else
+								{
+									placement += record_size;
+								}
+
+								if((fseek(fchange, position, SEEK_SET)) == 0)
+								{
+									fread(&table_input, sizeof(int), 1, fchange);
+									test = test->next;
+									printf("token is now: %s\n", test->tok_string);
+									if(test->tok_class == 7)
+									{
+
+									}
+									else if(test->tok_value == K_WHERE)
+									{
+										test = test->next;
+										char *condition_column = (char*)malloc(strlen(test->tok_string)+1);
+										strcat(condition_column, test->tok_string);
+										printf("Where Column is: %s\n", condition_column);
+									}
+									else
+									{
+										rc = INVALID_UPDATE_SYNTAX;
+										test->tok_value = INVALID;
+										done = true;
+									}
+								}
 							}
 						}
-
 					}
 					else if((test->tok_class == 5) && (test->tok_value == STRING_LITERAL) && (column_type[column_number-1] == T_CHAR))
 					{
