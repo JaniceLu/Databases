@@ -355,6 +355,14 @@ int do_semantic(token_list *tok_list)
 		cur_cmd = SELECT;
 		cur = cur->next->next->next; /*moves pointer to table keyword*/
 	}
+	else if ((cur->tok_value == K_SELECT) &&
+					(cur->next != NULL) && (cur->next->tok_value == IDENT)
+					&& (cur->next->tok_class == identifier) && (cur->next->next != NULL))
+	{
+		printf("SELECT statement\n");
+		cur_cmd = SELECT_SPECIFIC;
+		cur = cur->next; /*moves to the column name*/
+	}
 	else if((cur->tok_value == K_DELETE) && (cur->next != NULL) && (cur->next->tok_value == K_FROM))
 	{
 		printf("DELETE FROM statement\n");
@@ -366,6 +374,15 @@ int do_semantic(token_list *tok_list)
 		printf("UPDATE statement\n");
 		cur_cmd = UPDATE;
 		cur = cur->next;
+	}
+	else if((cur->tok_value == K_SELECT) && (cur->next != NULL) && (cur->next->tok_value == F_AVG)
+				&& (cur->next->next != NULL) && (cur->next->next->tok_value == S_LEFT_PAREN) &&
+				(cur->next->next->next != NULL) && (cur->next->next->next->next != NULL)
+				&& (cur->next->next->next->next->tok_value == S_RIGHT_PAREN))
+	{
+		printf("SELECT AVG statement\n");
+		cur_cmd = AVERAGE;
+		cur = cur->next->next->next; /*the column name*/
 	}
 	else
   	{
@@ -402,6 +419,12 @@ int do_semantic(token_list *tok_list)
 			case UPDATE:
 						rc = sem_update_table(cur);
 						break;
+			case SELECT_SPECIFIC:
+						rc = sem_select(cur);
+						break;
+			case AVERAGE:
+						rc = sem_average(cur);
+						break;
 			default:
 					; /* no action */
 		}
@@ -409,6 +432,2955 @@ int do_semantic(token_list *tok_list)
 	
 	return rc;
 }
+
+int sem_average(token_list *t_list)
+{
+	int rc = 0, record_size = 0, offset = 0, i;
+	int rows_inserted = 0;
+	int column_type, column_length, input_length, counter = 0;
+	int position = 0;
+	double final_average = 0;
+	char *input = NULL;
+	token_list *read;
+	tpd_entry *tab_entry = NULL;
+	cd_entry *test_entry = NULL;
+
+	FILE *flook = NULL;
+	bool done = false;
+	bool foundColumn = false;
+	bool foundwhere1Column = false;
+
+	read = t_list;
+	printf("current token: %s\n", read->next->next->next->tok_string);
+	if((tab_entry = get_tpd_from_list(read->next->next->next->tok_string)) == NULL)
+	{
+		rc = TABLE_NOT_EXIST;
+		read->tok_value = INVALID;
+	}
+	else
+	{
+		while((!done) && (!rc))
+		{
+			//get table name
+			char* extensionName = ".tab";
+			char* TableName = (char*)malloc(strlen(tab_entry->table_name) + strlen(extensionName) + 1);
+			strcat(TableName, tab_entry->table_name);
+			strcat(TableName, extensionName);
+			//open table file
+			if((flook = fopen(TableName, "rbc")) == NULL)
+			{
+				rc = FILE_OPEN_ERROR;
+				read->tok_value = INVALID;
+			}
+			//find record size
+			if((fseek(flook, 4, SEEK_SET)) == 0)
+				{
+					fread(&record_size, sizeof(int), 1, flook);
+					fflush(stdout);
+					printf("Record size: %d\n", record_size);
+				}
+
+			//look for number of rows in the file
+			if((fseek(flook, 8, SEEK_SET)) == 0)
+			{
+				fread(&rows_inserted, sizeof(int), 1, flook);
+				printf("Rows in table: %d\n", rows_inserted);
+			}
+			if((fseek(flook, 12, SEEK_SET)) == 0)
+			{
+				fread(&offset, sizeof(int), 1, flook);
+			}
+			printf("Offset: %d\n", offset);
+
+			int i = 0;
+			int column_number = 0;
+			int column_number_where1 = 0;
+			int column_number_where2 = 0;
+			int number_of_columns = 0;
+
+			int columns = tab_entry->num_columns;
+			int *column_lengths = new int[columns];
+			int *column_type = new int[columns];
+			int *column_not_null = new int[columns];
+
+			char *testColumnName = (char*)malloc(strlen(read->tok_string)+1);
+			strcat(testColumnName, read->tok_string);
+			printf("column to average is: %s\n", testColumnName);
+			for(i = 0, test_entry = (cd_entry*)((char*)tab_entry + tab_entry->cd_offset);
+									i < tab_entry->num_columns; i++, test_entry++)
+			{
+				column_not_null[i] = test_entry->not_null;
+				column_lengths[i] = test_entry->col_len;
+			//	printf("column length = %d\n", column_lengths[i]);
+				column_type[i] = test_entry->col_type;
+			//	printf("column type[%d] = %d\n",i, column_type[i]);
+				char *tableColumnName = NULL;
+				tableColumnName = (char*)malloc(strlen(test_entry->col_name)+1);
+				strcat(tableColumnName, test_entry->col_name);
+		//		printf("%s\n", tableColumnName);
+				if(strcmp(testColumnName,tableColumnName) == 0)
+				{
+					column_number = i+1;
+					foundColumn = true;
+				}
+			}
+
+			if(foundColumn)
+			{
+				printf("%s is at column %d\n", testColumnName, column_number);
+				printf("column type is %d\n", column_type[column_number-1]);
+				if(column_type[column_number-1] != T_INT)
+				{
+					rc = NONINTEGER_COLUMN;
+					read->tok_value = INVALID;
+					done = true;
+				}
+				else
+				{
+					read = read->next->next;
+					printf("current token is: %s\n", read->tok_string);
+					if(read->tok_value == K_FROM)
+					{
+						read = read->next->next;
+						if((read->tok_value == EOC) && (read->tok_class == terminator))
+						{
+							int table_value = 0;
+							int total = 0;
+							int rows_checked = 0;
+							if(columns == column_number)
+							{
+								position = offset+1;
+							}
+							else
+							{
+								position = offset;
+							}
+
+							for(i = 0; i < column_number; i++)
+							{
+								if(column_number == 1)
+								{
+									position += 1;
+									i == column_number+1;
+								}
+								else
+								{
+									position += column_lengths[i];
+								}
+							}
+							printf("position is: %d\n", position);
+							for(i = 0; i < rows_inserted; i++)
+							{
+								if((fseek(flook, position, SEEK_SET)) == 0)
+								{
+									fread(&table_value, sizeof(int), 1, flook);
+									total += table_value;
+								//	printf("total is: %d\n", total);
+									rows_checked++;
+								//	printf("rows to divide by: %d\n", rows_checked);
+									position += record_size;
+								}
+							}
+							final_average = (double)total/(double)rows_checked;
+							printf("Average: %0.2f\n", final_average);
+							done = true;
+						}//without a where clause
+						else if(read->tok_value == K_WHERE)
+						{
+							int table_value = 0;
+							if(columns == column_number)
+							{
+								position = offset+1;
+							}
+							else
+							{
+								position = offset;
+							}
+
+							for(i = 0; i < column_number; i++)
+							{
+								if(column_number == 1)
+								{
+									position += 1;
+									i == column_number+1;
+								}
+								else
+								{
+									position += column_lengths[i];
+								}
+							}
+							printf("position is: %d\n", position);	
+							read = read->next;
+							char *where1ColumnName = (char*)malloc(strlen(read->tok_string)+1);
+							strcat(where1ColumnName, read->tok_string);
+							printf("column to filter through is: %s\n", where1ColumnName);
+							for(i = 0, test_entry = (cd_entry*)((char*)tab_entry + tab_entry->cd_offset);
+													i < tab_entry->num_columns; i++, test_entry++)
+							{
+								char *tableColumnName = NULL;
+								tableColumnName = (char*)malloc(strlen(test_entry->col_name)+1);
+								strcat(tableColumnName, test_entry->col_name);
+								if(strcmp(where1ColumnName,tableColumnName) == 0)
+								{
+									column_number_where1 = i+1;
+									foundwhere1Column = true;
+								}
+							}
+							printf("column of where condition 1 is: %d\n",column_number_where1);
+							if(foundwhere1Column)
+							{
+								int operationwhere2 = 0;
+								int operationwhere1 = 0;
+								read = read->next;
+								if(read->tok_value == EOC)
+								{
+									rc = INVALID_AVG_SYNTAX;
+									read->tok_value = INVALID;
+									done = true;
+								}
+								else
+								{
+									operationwhere1 = read->tok_value;
+									printf("operation = %d\n", operationwhere1);
+								}
+								
+								if(operationwhere1 == S_EQUAL)
+								{
+									read = read->next;
+									printf("current token: %s\n", read->tok_string);
+									if(column_type[column_number_where1-1] == T_INT)
+									{
+										printf("made it here\n");
+										if((read->next->tok_value != EOC) && (read->next->tok_class == keyword))
+										{
+											int where1comparisonvalue = atoi(read->tok_string);
+											read = read->next;
+											int relation = read->tok_value;
+											read = read->next;
+											printf("relation is: %d\ntwo where conditions, current token: %s\n", relation, read->tok_string);
+											int column_number_where2 = 0;
+											bool foundwhere2Column = false;
+											char *where2ColumnName = (char*)malloc(strlen(read->tok_string)+1);
+											strcat(where2ColumnName, read->tok_string);
+											printf("column to filter through is: %s\n", where2ColumnName);
+											for(i = 0, test_entry = (cd_entry*)((char*)tab_entry + tab_entry->cd_offset);
+																	i < tab_entry->num_columns; i++, test_entry++)
+											{
+												char *tableColumnName = NULL;
+												tableColumnName = (char*)malloc(strlen(test_entry->col_name)+1);
+												strcat(tableColumnName, test_entry->col_name);
+												if(strcmp(where2ColumnName,tableColumnName) == 0)
+												{
+													column_number_where2 = i+1;
+													foundwhere2Column = true;
+												}
+											}
+											if(foundwhere2Column)
+											{
+												printf("2nd where condition is in column: %d\n", column_number_where2);
+												read = read->next;
+												if(read->tok_value == EOC)
+												{
+													rc = INVALID_AVG_SYNTAX;
+													read->tok_value = INVALID;
+													done = true;
+												}
+												else
+												{
+													operationwhere2 = read->tok_value;
+													read = read->next;
+													printf("%s\n", read->tok_string);
+													printf("%d\n", operationwhere2);
+													char *where2comparisonvaluechar = (char *)malloc(column_lengths[column_number_where2-1]+1);
+													where2comparisonvaluechar = read->tok_string;
+													int where2comparisonvalueint = atoi(read->tok_string);
+													printf("operation = %d\n", operationwhere2);
+													if(relation == K_AND)
+													{
+														int total = 0;
+														int rows_satisfy_condition = 0;
+														int position_where1 = 0;
+														int position_where2 = 0;
+														int limiter1 = column_number_where1-1;
+														int limiter2 = column_number_where2-1;
+														if(operationwhere2 == S_EQUAL)
+														{
+															if(columns == column_number_where1)
+															{
+																position_where1 = offset+1;
+															}
+															else
+															{
+																position_where1 = offset+1;
+															}
+
+															if(columns == column_number_where2)
+															{
+																position_where2 = offset+1;
+															}
+															else
+															{
+																position_where2 = offset+1;
+															}
+															
+															for(int i = 0; i < limiter1; i++)
+															{
+																if(column_number_where1 == 1)
+																{
+																	position_where1 += 1;
+																	i == column_number_where1+1;
+																}
+																else
+																{
+																	position_where1 += column_lengths[i]+1;
+																}
+															}
+															for(int j = 0; j < limiter2; j++)
+															{
+																if(column_number_where2 == 1)
+																{
+																	position_where2 += 1;
+																	i == column_number_where2+1;
+																}
+																else
+																{
+																	position_where2 += column_lengths[j]+1;
+																//	printf("position of 1st where condition: %d\n", position_where1);
+																}
+															}
+															printf("position of 1st where condition: %d\n", position_where1);
+															printf("position of 2nd where condition: %d\n", position_where2);
+															for(int k = 0; k < rows_inserted; k++)
+															{
+																if((fseek(flook, position_where1, SEEK_SET)) == 0)
+																{
+																	int condition1tableint = 0;
+																	fread(&condition1tableint, sizeof(int), 1, flook);
+																	printf("condition 1 to check: %d\n", condition1tableint);
+																	
+																	if(where1comparisonvalue == condition1tableint)
+																	{
+																		if((fseek(flook, position_where2, SEEK_SET)) == 0)
+																		{
+																			if(column_type[column_number_where2-1] == T_CHAR)
+																			{
+																				char *condition2tablestring = (char*)malloc(column_lengths[column_number_where1]+1);
+																				fread(condition2tablestring, column_lengths[column_number_where1], 1, flook);
+																				printf("condition 2 to check: %s\n", condition2tablestring);
+																				if(strcmp(where2comparisonvaluechar, condition2tablestring) == 0)
+																				{
+																					if((fseek(flook, position, SEEK_SET)) == 0)
+																					{
+																						fread(&table_value, sizeof(int), 1, flook);
+																						printf("table value: %d\n", table_value);
+																						total += table_value;
+																						rows_satisfy_condition++;
+																					}
+																				}
+																			}
+																			else if(column_type[column_number_where2-1] == T_INT)
+																			{
+																				int condition2tableint = 0;
+																				fread(&condition2tableint, sizeof(int), 1, flook);
+																				printf("condition 2 to check: %d\n", condition2tableint);
+																				if(where2comparisonvalueint == condition2tableint)
+																				{
+																					if((fseek(flook, position, SEEK_SET)) == 0)
+																					{
+																						fread(&table_value, sizeof(int), 1, flook);
+																						printf("table value: %d\n", table_value);
+																						total += table_value;
+																						rows_satisfy_condition++;
+																					}
+																				}
+																			}
+																		}
+																	}
+																}
+																position += record_size;
+																position_where1 += record_size;
+																position_where2 += record_size;
+															}
+															if((total > 0) && (rows_satisfy_condition > 0))
+															{
+																double answer = (double)total/(double)rows_satisfy_condition;
+																printf("Average: %0.2f\n", answer);
+																done = true;
+															}
+															else
+															{
+																printf("Average: 0.00\n");
+																done = true;
+															}
+														}
+														else if(operationwhere2 == S_LESS)
+														{
+															if(columns == column_number_where1)
+															{
+																position_where1 = offset+1;	
+															}
+															else
+															{
+																position_where1 = offset+1;
+															}
+
+															if(columns == column_number_where2)
+															{
+																position_where2 = offset+1;
+															}
+															else
+															{
+																position_where2 = offset+1;
+															}
+															
+															for(int i = 0; i < limiter1; i++)
+															{
+																if(column_number_where1 == 1)
+																{
+																	position_where1 += 1;
+																	i == column_number_where1+1;
+																}
+																else
+																{
+																	position_where1 += column_lengths[i]+1;
+																}
+															}
+															for(int j = 0; j < limiter2; j++)
+															{
+																if(column_number_where2 == 1)
+																{
+																	position_where2 += 1;
+																	i == column_number_where2+1;
+																}
+																else
+																{
+																	position_where2 += column_lengths[j]+1;
+																//	printf("position of 1st where condition: %d\n", position_where1);
+																}
+															}
+															printf("position of 1st where condition: %d\n", position_where1);
+															printf("position of 2nd where condition: %d\n", position_where2);
+															for(int k = 0; k < rows_inserted; k++)
+															{
+																if((fseek(flook, position_where1, SEEK_SET)) == 0)
+																{
+																	int condition1tableint = 0;
+																	fread(&condition1tableint, sizeof(int), 1, flook);
+																	printf("condition 1 to check: %d\n", condition1tableint);
+																	
+																	if(where1comparisonvalue == condition1tableint)
+																	{
+																		if((fseek(flook, position_where2, SEEK_SET)) == 0)
+																		{
+																			if(column_type[column_number_where2-1] == T_CHAR)
+																			{
+																				char *condition2tablestring = (char*)malloc(column_lengths[column_number_where1]+1);
+																				fread(condition2tablestring, column_lengths[column_number_where1], 1, flook);
+																				printf("condition 2 to check: %s\n", condition2tablestring);
+																				if(strcmp(where2comparisonvaluechar, condition2tablestring) < 0)
+																				{
+																					if((fseek(flook, position, SEEK_SET)) == 0)
+																					{
+																						fread(&table_value, sizeof(int), 1, flook);
+																						printf("table value: %d\n", table_value);
+																						total += table_value;
+																						rows_satisfy_condition++;
+																					}
+																				}
+																			}
+																			else if(column_type[column_number_where2-1] == T_INT)
+																			{
+																				int condition2tableint = 0;
+																				fread(&condition2tableint, sizeof(int), 1, flook);
+																				printf("condition 2 to check: %d\n", condition2tableint);
+																				if(where2comparisonvalueint < condition2tableint)
+																				{
+																					if((fseek(flook, position, SEEK_SET)) == 0)
+																					{
+																						fread(&table_value, sizeof(int), 1, flook);
+																						printf("table value: %d\n", table_value);
+																						total += table_value;
+																						rows_satisfy_condition++;
+																					}
+																				}
+																			}
+																		}
+																	}
+																}
+																position += record_size;
+																position_where1 += record_size;
+																position_where2 += record_size;
+															}
+															if((total > 0) && (rows_satisfy_condition > 0))
+															{
+																double answer = (double)total/(double)rows_satisfy_condition;
+																printf("Average: %0.2f\n", answer);
+																done = true;
+															}
+															else
+															{
+																printf("Average: 0.00\n");
+																done = true;
+															}
+														}
+														else if(operationwhere2 == S_GREATER)
+														{
+															if(columns == column_number_where1)
+															{
+																position_where1 = offset+1;	
+															}
+															else
+															{
+																position_where1 = offset+1;
+															}
+
+															if(columns == column_number_where2)
+															{
+																position_where2 = offset+1;
+															}
+															else
+															{
+																position_where2 = offset+1;
+															}
+															
+															for(int i = 0; i < limiter1; i++)
+															{
+																if(column_number_where1 == 1)
+																{
+																	position_where1 += 1;
+																	i == column_number_where1+1;
+																}
+																else
+																{
+																	position_where1 += column_lengths[i]+1;
+																}
+															}
+															for(int j = 0; j < limiter2; j++)
+															{
+																if(column_number_where2 == 1)
+																{
+																	position_where2 += 1;
+																	i == column_number_where2+1;
+																}
+																else
+																{
+																	position_where2 += column_lengths[j]+1;
+																//	printf("position of 1st where condition: %d\n", position_where1);
+																}
+															}
+															printf("position of 1st where condition: %d\n", position_where1);
+															printf("position of 2nd where condition: %d\n", position_where2);
+															for(int k = 0; k < rows_inserted; k++)
+															{
+																if((fseek(flook, position_where1, SEEK_SET)) == 0)
+																{
+																	int condition1tableint = 0;
+																	fread(&condition1tableint, sizeof(int), 1, flook);
+																	printf("condition 1 to check: %d\n", condition1tableint);
+																	
+																	if(where1comparisonvalue == condition1tableint)
+																	{
+																		if((fseek(flook, position_where2, SEEK_SET)) == 0)
+																		{
+																			if(column_type[column_number_where2-1] == T_CHAR)
+																			{
+																				char *condition2tablestring = (char*)malloc(column_lengths[column_number_where1]+1);
+																				fread(condition2tablestring, column_lengths[column_number_where1], 1, flook);
+																				printf("condition 2 to check: %s\n", condition2tablestring);
+																				if(strcmp(where2comparisonvaluechar, condition2tablestring) > 0)
+																				{
+																					if((fseek(flook, position, SEEK_SET)) == 0)
+																					{
+																						fread(&table_value, sizeof(int), 1, flook);
+																						printf("table value: %d\n", table_value);
+																						total += table_value;
+																						rows_satisfy_condition++;
+																					}
+																				}
+																			}
+																			else if(column_type[column_number_where2-1] == T_INT)
+																			{
+																				int condition2tableint = 0;
+																				fread(&condition2tableint, sizeof(int), 1, flook);
+																				printf("condition 2 to check: %d\n", condition2tableint);
+																				if(where2comparisonvalueint > condition2tableint)
+																				{
+																					if((fseek(flook, position, SEEK_SET)) == 0)
+																					{
+																						fread(&table_value, sizeof(int), 1, flook);
+																						printf("table value: %d\n", table_value);
+																						total += table_value;
+																						rows_satisfy_condition++;
+																					}
+																				}
+																			}
+																		}
+																	}
+																}
+																position += record_size;
+																position_where1 += record_size;
+																position_where2 += record_size;
+															}
+															if((total > 0) && (rows_satisfy_condition > 0))
+															{
+																double answer = (double)total/(double)rows_satisfy_condition;
+																printf("Average: %0.2f\n", answer);
+																done = true;
+															}
+															else
+															{
+																printf("Average: 0.00\n");
+																done = true;
+															}
+														}
+														else
+														{
+															rc = INVALID_OPERATOR;
+															read->tok_value = INVALID;
+															done = true;
+														}
+													}
+													else if(relation == K_OR)
+													{
+														int total = 0;
+														int rows_satisfy_condition = 0;
+														int position_where1 = 0;
+														int position_where2 = 0;
+														int limiter1 = column_number_where1-1;
+														int limiter2 = column_number_where2-1;
+														if(operationwhere2 == S_EQUAL)
+														{
+															if(columns == column_number_where1)
+															{
+																position_where1 = offset+1;
+															}
+															else
+															{
+																position_where1 = offset+1;
+															}
+
+															if(columns == column_number_where2)
+															{
+																position_where2 = offset+1;
+															}
+															else
+															{
+																position_where2 = offset+1;
+															}
+															
+															for(int i = 0; i < limiter1; i++)
+															{
+																if(column_number_where1 == 1)
+																{
+																	position_where1 += 1;
+																	i == column_number_where1+1;
+																}
+																else
+																{
+																	position_where1 += column_lengths[i]+1;
+																}
+															}
+															for(int j = 0; j < limiter2; j++)
+															{
+																if(column_number_where2 == 1)
+																{
+																	position_where2 += 1;
+																	i == column_number_where2+1;
+																}
+																else
+																{
+																	position_where2 += column_lengths[j]+1;
+																//	printf("position of 1st where condition: %d\n", position_where1);
+																}
+															}
+															printf("position of 1st where condition: %d\n", position_where1);
+															printf("position of 2nd where condition: %d\n", position_where2);
+															for(int k = 0; k < rows_inserted; k++)
+															{
+																if((fseek(flook, position_where1, SEEK_SET)) == 0)
+																{
+																	int condition1tableint = 0;
+																	fread(&condition1tableint, sizeof(int), 1, flook);
+																	printf("condition 1 to check: %d\n", condition1tableint);
+																	
+																	if(where1comparisonvalue == condition1tableint)
+																	{
+																		if((fseek(flook, position, SEEK_SET)) == 0)
+																		{
+																			fread(&table_value, sizeof(int), 1, flook);
+																			printf("table value: %d\n", table_value);
+																			total += table_value;
+																			rows_satisfy_condition++;
+																		}
+																	}
+																	else
+																	{
+																		if((fseek(flook, position_where2, SEEK_SET)) == 0)
+																		{
+																			if(column_type[column_number_where2-1] == T_CHAR)
+																			{
+																				char *condition2tablestring = (char*)malloc(column_lengths[column_number_where1]+1);
+																				fread(condition2tablestring, column_lengths[column_number_where1], 1, flook);
+																				printf("condition 2 to check: %s\n", condition2tablestring);
+																				if(strcmp(where2comparisonvaluechar, condition2tablestring) == 0)
+																				{
+																					fread(&table_value, sizeof(int), 1, flook);
+																					printf("table value: %d\n", table_value);
+																					total += table_value;
+																					rows_satisfy_condition++;
+																				}
+																			}
+																			else if(column_type[column_number_where2-1] == T_INT)
+																			{
+																				int condition2tableint = 0;
+																				fread(&condition2tableint, sizeof(int), 1, flook);
+																				printf("condition 2 to check: %d\n", condition2tableint);
+																				if(where2comparisonvalueint == condition2tableint)
+																				{
+																					if((fseek(flook, position, SEEK_SET)) == 0)
+																					{
+																						fread(&table_value, sizeof(int), 1, flook);
+																						printf("table value: %d\n", table_value);
+																						total += table_value;
+																						rows_satisfy_condition++;
+																					}
+																				}
+																			}
+																		}
+																	}
+																}
+																position += record_size;
+																position_where1 += record_size;
+																position_where2 += record_size;
+															}
+															if((total > 0) && (rows_satisfy_condition > 0))
+															{
+																double answer = (double)total/(double)rows_satisfy_condition;
+																printf("Average: %0.2f\n", answer);
+																done = true;
+															}
+															else
+															{
+																printf("Average: 0.00\n");
+																done = true;
+															}
+														}
+														else if(operationwhere2 == S_LESS)
+														{
+															if(columns == column_number_where1)
+															{
+																position_where1 = offset+1;	
+															}
+															else
+															{
+																position_where1 = offset+1;
+															}
+
+															if(columns == column_number_where2)
+															{
+																position_where2 = offset+1;
+															}
+															else
+															{
+																position_where2 = offset+1;
+															}
+															
+															for(int i = 0; i < limiter1; i++)
+															{
+																if(column_number_where1 == 1)
+																{
+																	position_where1 += 1;
+																	i == column_number_where1+1;
+																}
+																else
+																{
+																	position_where1 += column_lengths[i]+1;
+																}
+															}
+															for(int j = 0; j < limiter2; j++)
+															{
+																if(column_number_where2 == 1)
+																{
+																	position_where2 += 1;
+																	i == column_number_where2+1;
+																}
+																else
+																{
+																	position_where2 += column_lengths[j]+1;
+																//	printf("position of 1st where condition: %d\n", position_where1);
+																}
+															}
+															printf("position of 1st where condition: %d\n", position_where1);
+															printf("position of 2nd where condition: %d\n", position_where2);
+															for(int k = 0; k < rows_inserted; k++)
+															{
+																if((fseek(flook, position_where1, SEEK_SET)) == 0)
+																{
+																	int condition1tableint = 0;
+																	fread(&condition1tableint, sizeof(int), 1, flook);
+																	printf("condition 1 to check: %d\n", condition1tableint);
+																	
+																	if(where1comparisonvalue == condition1tableint)
+																	{
+																		fread(&table_value, sizeof(int), 1, flook);
+																		printf("table value: %d\n", table_value);
+																		total += table_value;
+																		rows_satisfy_condition++;
+																	}
+																	else
+																	{
+																		if((fseek(flook, position_where2, SEEK_SET)) == 0)
+																		{
+																			if(column_type[column_number_where2-1] == T_CHAR)
+																			{
+																				char *condition2tablestring = (char*)malloc(column_lengths[column_number_where1]+1);
+																				fread(condition2tablestring, column_lengths[column_number_where1], 1, flook);
+																				printf("condition 2 to check: %s\n", condition2tablestring);
+																				if(strcmp(where2comparisonvaluechar, condition2tablestring) < 0)
+																				{
+																					if((fseek(flook, position, SEEK_SET)) == 0)
+																					{
+																						fread(&table_value, sizeof(int), 1, flook);
+																						printf("table value: %d\n", table_value);
+																						total += table_value;
+																						rows_satisfy_condition++;
+																					}
+																				}
+																			}
+																			else if(column_type[column_number_where2-1] == T_INT)
+																			{
+																				int condition2tableint = 0;
+																				fread(&condition2tableint, sizeof(int), 1, flook);
+																				printf("condition 2 to check: %d\n", condition2tableint);
+																				if(where2comparisonvalueint < condition2tableint)
+																				{
+																					if((fseek(flook, position, SEEK_SET)) == 0)
+																					{
+																						fread(&table_value, sizeof(int), 1, flook);
+																						printf("table value: %d\n", table_value);
+																						total += table_value;
+																						rows_satisfy_condition++;
+																					}
+																				}
+																			}
+																		}
+																	}
+																}
+																position += record_size;
+																position_where1 += record_size;
+																position_where2 += record_size;
+															}
+															if((total > 0) && (rows_satisfy_condition > 0))
+															{
+																double answer = (double)total/(double)rows_satisfy_condition;
+																printf("Average: %0.2f\n", answer);
+																done = true;
+															}
+															else
+															{
+																printf("Average: 0.00\n");
+																done = true;
+															}
+														}
+														else if(operationwhere2 == S_GREATER)
+														{
+															if(columns == column_number_where1)
+															{
+																position_where1 = offset+1;	
+															}
+															else
+															{
+																position_where1 = offset+1;
+															}
+
+															if(columns == column_number_where2)
+															{
+																position_where2 = offset+1;
+															}
+															else
+															{
+																position_where2 = offset+1;
+															}
+															
+															for(int i = 0; i < limiter1; i++)
+															{
+																if(column_number_where1 == 1)
+																{
+																	position_where1 += 1;
+																	i == column_number_where1+1;
+																}
+																else
+																{
+																	position_where1 += column_lengths[i]+1;
+																}
+															}
+															for(int j = 0; j < limiter2; j++)
+															{
+																if(column_number_where2 == 1)
+																{
+																	position_where2 += 1;
+																	i == column_number_where2+1;
+																}
+																else
+																{
+																	position_where2 += column_lengths[j]+1;
+																//	printf("position of 1st where condition: %d\n", position_where1);
+																}
+															}
+															printf("position of 1st where condition: %d\n", position_where1);
+															printf("position of 2nd where condition: %d\n", position_where2);
+															for(int k = 0; k < rows_inserted; k++)
+															{
+																if((fseek(flook, position_where1, SEEK_SET)) == 0)
+																{
+																	int condition1tableint = 0;
+																	fread(&condition1tableint, sizeof(int), 1, flook);
+																	printf("condition 1 to check: %d\n", condition1tableint);
+																	
+																	if(where1comparisonvalue == condition1tableint)
+																	{
+																		fread(&table_value, sizeof(int), 1, flook);
+																		printf("table value: %d\n", table_value);
+																		total += table_value;
+																		rows_satisfy_condition++;
+																	}
+																	else
+																	{
+																		if((fseek(flook, position_where2, SEEK_SET)) == 0)
+																		{
+																			if(column_type[column_number_where2-1] == T_CHAR)
+																			{
+																				char *condition2tablestring = (char*)malloc(column_lengths[column_number_where1]+1);
+																				fread(condition2tablestring, column_lengths[column_number_where1], 1, flook);
+																				printf("condition 2 to check: %s\n", condition2tablestring);
+																				if(strcmp(where2comparisonvaluechar, condition2tablestring) > 0)
+																				{
+																					if((fseek(flook, position, SEEK_SET)) == 0)
+																					{
+																						fread(&table_value, sizeof(int), 1, flook);
+																						printf("table value: %d\n", table_value);
+																						total += table_value;
+																						rows_satisfy_condition++;
+																					}
+																				}
+																			}
+																			else if(column_type[column_number_where2-1] == T_INT)
+																			{
+																				int condition2tableint = 0;
+																				fread(&condition2tableint, sizeof(int), 1, flook);
+																				printf("condition 2 to check: %d\n", condition2tableint);
+																				if(where2comparisonvalueint > condition2tableint)
+																				{
+																					if((fseek(flook, position, SEEK_SET)) == 0)
+																					{
+																						fread(&table_value, sizeof(int), 1, flook);
+																						printf("table value: %d\n", table_value);
+																						total += table_value;
+																						rows_satisfy_condition++;
+																					}
+																				}
+																			}
+																		}
+																	}
+																}
+																position += record_size;
+																position_where1 += record_size;
+																position_where2 += record_size;
+															}
+															if((total > 0) && (rows_satisfy_condition > 0))
+															{
+																double answer = (double)total/(double)rows_satisfy_condition;
+																printf("Average: %0.2f\n", answer);
+																done = true;
+															}
+															else
+															{
+																printf("Average: 0.00\n");
+																done = true;
+															}
+														}
+														else
+														{
+															rc = INVALID_OPERATOR;
+															read->tok_value = INVALID;
+															done = true;
+														}
+													}
+													else
+													{
+														rc = INVALID_KEYWORD;
+														read->tok_value = INVALID;
+														done = true;
+													}
+												}
+											}
+											else
+											{
+												rc = COLUMN_NOT_EXIST;
+												read->tok_value = INVALID;
+												done = true;
+											}
+										}
+										else if((read->next->tok_value == EOC) && (read->next->tok_class == terminator))
+										{
+											printf("one where condition\n");
+											int where1comparisonvalue = atoi(read->tok_string);
+											printf("%d\n", where1comparisonvalue);
+											int position_where1 = 0;
+											int limiter1 = column_number_where1-1;
+											int total = 0;
+											int rows_satisfy_condition = 0;
+											if(columns == column_number_where1)
+											{
+												position_where1 = offset+1;
+											}
+											else
+											{
+												position_where1 = offset+1;
+											}
+
+											for(int i = 0; i < limiter1; i++)
+											{
+												if(column_number_where1 == 1)
+												{
+													position_where1 += 1;
+													i == column_number_where1+1;
+												}
+												else
+												{
+													position_where1 += column_lengths[i]+1;
+												}
+											}
+											printf("position of 1st where condition: %d\n", position_where1);
+											for(int k = 0; k < rows_inserted; k++)
+											{
+												if((fseek(flook, position_where1, SEEK_SET)) == 0)
+												{
+													int condition1tableint = 0;
+													fread(&condition1tableint, sizeof(int), 1, flook);
+													printf("condition 1 to check: %d\n", condition1tableint);
+													if(where1comparisonvalue == condition1tableint)
+													{
+														if((fseek(flook, position, SEEK_SET)) == 0)
+														{
+															fread(&table_value, sizeof(int), 1, flook);
+															printf("table value: %d\n", table_value);
+															total += table_value;
+															rows_satisfy_condition++;
+														}
+												}
+												position += record_size;
+												position_where1 += record_size;
+												}
+											}
+											if((total > 0) && (rows_satisfy_condition > 0))
+											{
+												double answer = (double)total/(double)rows_satisfy_condition;
+												printf("Average: %0.2f\n", answer);
+												done = true;
+											}
+											else
+											{
+												printf("Average: 0.00\n");
+												done = true;
+											}
+										}
+										else
+										{
+											rc = INVALID_AVG_SYNTAX;
+											read->tok_value = INVALID;
+											done = true;
+										}
+									}//first where condition is a int
+									else if(column_type[column_number_where1-1] == T_CHAR)
+									{
+										if((read->next->tok_value != EOC) && (read->next->tok_class == keyword))
+										{
+											char *where1comparisonvalue = (char*)malloc(strlen(read->tok_string)+1);
+											where1comparisonvalue = read->tok_string;
+											read = read->next;
+											int relation = read->tok_value;
+											read = read->next;
+											printf("relation is: %d\ntwo where conditions, current token: %s\n", relation, read->tok_string);
+											int column_number_where2 = 0;
+											bool foundwhere2Column = false;
+											char *where2ColumnName = (char*)malloc(strlen(read->tok_string)+1);
+											strcat(where2ColumnName, read->tok_string);
+											printf("column to filter through is: %s\n", where2ColumnName);
+											for(i = 0, test_entry = (cd_entry*)((char*)tab_entry + tab_entry->cd_offset);
+																	i < tab_entry->num_columns; i++, test_entry++)
+											{
+												char *tableColumnName = NULL;
+												tableColumnName = (char*)malloc(strlen(test_entry->col_name)+1);
+												strcat(tableColumnName, test_entry->col_name);
+												if(strcmp(where2ColumnName,tableColumnName) == 0)
+												{
+													column_number_where2 = i+1;
+													foundwhere2Column = true;
+												}
+											}
+											if(foundwhere2Column)
+											{
+												printf("2nd where condition is in column: %d\n", column_number_where2);
+												read = read->next;
+												if(read->tok_value == EOC)
+												{
+													rc = INVALID_AVG_SYNTAX;
+													read->tok_value = INVALID;
+													done = true;
+												}
+												else
+												{
+													operationwhere2 = read->tok_value;
+													read = read->next;
+													printf("%s\n", read->tok_string);
+													printf("%d\n", operationwhere2);
+													char *where2comparisonvaluechar = (char *)malloc(column_lengths[column_number_where2-1]+1);
+													where2comparisonvaluechar = read->tok_string;
+													int where2comparisonvalueint = atoi(read->tok_string);
+													printf("operation = %d\n", operationwhere2);
+													if(relation == K_AND)
+													{
+														int total = 0;
+														int rows_satisfy_condition = 0;
+														int position_where1 = 0;
+														int position_where2 = 0;
+														int limiter1 = column_number_where1-1;
+														int limiter2 = column_number_where2-1;
+														if(operationwhere2 == S_EQUAL)
+														{
+															if(columns == column_number_where1)
+															{
+																position_where1 = offset+1;
+															}
+															else
+															{
+																position_where1 = offset+1;
+															}
+
+															if(columns == column_number_where2)
+															{
+																position_where2 = offset+1;
+															}
+															else
+															{
+																position_where2 = offset+1;
+															}
+															
+															for(int i = 0; i < limiter1; i++)
+															{
+																if(column_number_where1 == 1)
+																{
+																	position_where1 += 1;
+																	i == column_number_where1+1;
+																}
+																else
+																{
+																	position_where1 += column_lengths[i]+1;
+																}
+															}
+															for(int j = 0; j < limiter2; j++)
+															{
+																if(column_number_where2 == 1)
+																{
+																	position_where2 += 1;
+																	i == column_number_where2+1;
+																}
+																else
+																{
+																	position_where2 += column_lengths[j]+1;
+																//	printf("position of 1st where condition: %d\n", position_where1);
+																}
+															}
+															printf("position of 1st where condition: %d\n", position_where1);
+															printf("position of 2nd where condition: %d\n", position_where2);
+															for(int k = 0; k < rows_inserted; k++)
+															{
+																if((fseek(flook, position_where1, SEEK_SET)) == 0)
+																{
+																	char *condition1tablechar = (char*)malloc(column_lengths[column_number_where1-1]+1);
+																	fread(condition1tablechar, column_lengths[column_number_where1-1], 1, flook);
+																	printf("condition 1 to check: %s\n", condition1tablechar);
+																	
+																	if(strcmp(where1comparisonvalue,condition1tablechar) == 0)
+																	{
+																		if((fseek(flook, position_where2, SEEK_SET)) == 0)
+																		{
+																			if(column_type[column_number_where2-1] == T_CHAR)
+																			{
+																				char *condition2tablestring = (char*)malloc(column_lengths[column_number_where1]+1);
+																				fread(condition2tablestring, column_lengths[column_number_where1], 1, flook);
+																				printf("condition 2 to check: %s\n", condition2tablestring);
+																				if(strcmp(where2comparisonvaluechar, condition2tablestring) == 0)
+																				{
+																					if((fseek(flook, position, SEEK_SET)) == 0)
+																					{
+																						fread(&table_value, sizeof(int), 1, flook);
+																						printf("table value: %d\n", table_value);
+																						total += table_value;
+																						rows_satisfy_condition++;
+																					}
+																				}
+																			}
+																			else if(column_type[column_number_where2-1] == T_INT)
+																			{
+																				int condition2tableint = 0;
+																				fread(&condition2tableint, sizeof(int), 1, flook);
+																				printf("condition 2 to check: %d\n", condition2tableint);
+																				if(where2comparisonvalueint == condition2tableint)
+																				{
+																					if((fseek(flook, position, SEEK_SET)) == 0)
+																					{
+																						fread(&table_value, sizeof(int), 1, flook);
+																						printf("table value: %d\n", table_value);
+																						total += table_value;
+																						rows_satisfy_condition++;
+																					}
+																				}
+																			}
+																		}
+																	}
+																}
+																position += record_size;
+																position_where1 += record_size;
+																position_where2 += record_size;
+															}
+															if((total > 0) && (rows_satisfy_condition > 0))
+															{
+																double answer = (double)total/(double)rows_satisfy_condition;
+																printf("Average: %0.2f\n", answer);
+																done = true;
+															}
+															else
+															{
+																printf("Average: 0.00\n");
+																done = true;
+															}
+														}
+														else if(operationwhere2 == S_LESS)
+														{
+															if(columns == column_number_where1)
+															{
+																position_where1 = offset+1;	
+															}
+															else
+															{
+																position_where1 = offset+1;
+															}
+
+															if(columns == column_number_where2)
+															{
+																position_where2 = offset+1;
+															}
+															else
+															{
+																position_where2 = offset+1;
+															}
+															
+															for(int i = 0; i < limiter1; i++)
+															{
+																if(column_number_where1 == 1)
+																{
+																	position_where1 += 1;
+																	i == column_number_where1+1;
+																}
+																else
+																{
+																	position_where1 += column_lengths[i]+1;
+																}
+															}
+															for(int j = 0; j < limiter2; j++)
+															{
+																if(column_number_where2 == 1)
+																{
+																	position_where2 += 1;
+																	i == column_number_where2+1;
+																}
+																else
+																{
+																	position_where2 += column_lengths[j]+1;
+																//	printf("position of 1st where condition: %d\n", position_where1);
+																}
+															}
+															printf("position of 1st where condition: %d\n", position_where1);
+															printf("position of 2nd where condition: %d\n", position_where2);
+															for(int k = 0; k < rows_inserted; k++)
+															{
+																if((fseek(flook, position_where1, SEEK_SET)) == 0)
+																{
+																	char *condition1tablechar = (char*)malloc(column_lengths[column_number_where1-1]+1);
+																	fread(condition1tablechar, column_lengths[column_number_where1-1], 1, flook);
+																	printf("condition 1 to check: %s\n", condition1tablechar);
+																	
+																	if(strcmp(where1comparisonvalue,condition1tablechar) < 0)
+																	{
+																		if((fseek(flook, position_where2, SEEK_SET)) == 0)
+																		{
+																			if(column_type[column_number_where2-1] == T_CHAR)
+																			{
+																				char *condition2tablestring = (char*)malloc(column_lengths[column_number_where1]+1);
+																				fread(condition2tablestring, column_lengths[column_number_where1], 1, flook);
+																				printf("condition 2 to check: %s\n", condition2tablestring);
+																				if(strcmp(where2comparisonvaluechar, condition2tablestring) < 0)
+																				{
+																					if((fseek(flook, position, SEEK_SET)) == 0)
+																					{
+																						fread(&table_value, sizeof(int), 1, flook);
+																						printf("table value: %d\n", table_value);
+																						total += table_value;
+																						rows_satisfy_condition++;
+																					}
+																				}
+																			}
+																			else if(column_type[column_number_where2-1] == T_INT)
+																			{
+																				int condition2tableint = 0;
+																				fread(&condition2tableint, sizeof(int), 1, flook);
+																				printf("condition 2 to check: %d\n", condition2tableint);
+																				if(where2comparisonvalueint < condition2tableint)
+																				{
+																					if((fseek(flook, position, SEEK_SET)) == 0)
+																					{
+																						fread(&table_value, sizeof(int), 1, flook);
+																						printf("table value: %d\n", table_value);
+																						total += table_value;
+																						rows_satisfy_condition++;
+																					}
+																				}
+																			}
+																		}
+																	}
+																}
+																position += record_size;
+																position_where1 += record_size;
+																position_where2 += record_size;
+															}
+															if((total > 0) && (rows_satisfy_condition > 0))
+															{
+																double answer = (double)total/(double)rows_satisfy_condition;
+																printf("Average: %0.2f\n", answer);
+																done = true;
+															}
+															else
+															{
+																printf("Average: 0.00\n");
+																done = true;
+															}
+														}
+														else if(operationwhere2 == S_GREATER)
+														{
+															if(columns == column_number_where1)
+															{
+																position_where1 = offset+1;	
+															}
+															else
+															{
+																position_where1 = offset+1;
+															}
+
+															if(columns == column_number_where2)
+															{
+																position_where2 = offset+1;
+															}
+															else
+															{
+																position_where2 = offset+1;
+															}
+															
+															for(int i = 0; i < limiter1; i++)
+															{
+																if(column_number_where1 == 1)
+																{
+																	position_where1 += 1;
+																	i == column_number_where1+1;
+																}
+																else
+																{
+																	position_where1 += column_lengths[i]+1;
+																}
+															}
+															for(int j = 0; j < limiter2; j++)
+															{
+																if(column_number_where2 == 1)
+																{
+																	position_where2 += 1;
+																	i == column_number_where2+1;
+																}
+																else
+																{
+																	position_where2 += column_lengths[j]+1;
+																//	printf("position of 1st where condition: %d\n", position_where1);
+																}
+															}
+															printf("position of 1st where condition: %d\n", position_where1);
+															printf("position of 2nd where condition: %d\n", position_where2);
+															for(int k = 0; k < rows_inserted; k++)
+															{
+																if((fseek(flook, position_where1, SEEK_SET)) == 0)
+																{
+																	char *condition1tablechar = (char*)malloc(column_lengths[column_number_where1-1]+1);
+																	fread(condition1tablechar, column_lengths[column_number_where1-1], 1, flook);
+																	printf("condition 1 to check: %s\n", condition1tablechar);
+																	
+																	if(strcmp(where1comparisonvalue,condition1tablechar) < 0)
+																	{
+																		if((fseek(flook, position_where2, SEEK_SET)) == 0)
+																		{
+																			if(column_type[column_number_where2-1] == T_CHAR)
+																			{
+																				char *condition2tablestring = (char*)malloc(column_lengths[column_number_where1]+1);
+																				fread(condition2tablestring, column_lengths[column_number_where1], 1, flook);
+																				printf("condition 2 to check: %s\n", condition2tablestring);
+																				if(strcmp(where2comparisonvaluechar, condition2tablestring) > 0)
+																				{
+																					if((fseek(flook, position, SEEK_SET)) == 0)
+																					{
+																						fread(&table_value, sizeof(int), 1, flook);
+																						printf("table value: %d\n", table_value);
+																						total += table_value;
+																						rows_satisfy_condition++;
+																					}
+																				}
+																			}
+																			else if(column_type[column_number_where2-1] == T_INT)
+																			{
+																				int condition2tableint = 0;
+																				fread(&condition2tableint, sizeof(int), 1, flook);
+																				printf("condition 2 to check: %d\n", condition2tableint);
+																				if(where2comparisonvalueint > condition2tableint)
+																				{
+																					if((fseek(flook, position, SEEK_SET)) == 0)
+																					{
+																						fread(&table_value, sizeof(int), 1, flook);
+																						printf("table value: %d\n", table_value);
+																						total += table_value;
+																						rows_satisfy_condition++;
+																					}
+																				}
+																			}
+																		}
+																	}
+																}
+																position += record_size;
+																position_where1 += record_size;
+																position_where2 += record_size;
+															}
+															if((total > 0) && (rows_satisfy_condition > 0))
+															{
+																double answer = (double)total/(double)rows_satisfy_condition;
+																printf("Average: %0.2f\n", answer);
+																done = true;
+															}
+															else
+															{
+																printf("Average: 0.00\n");
+																done = true;
+															}
+														}
+														else
+														{
+															rc = INVALID_OPERATOR;
+															read->tok_value = INVALID;
+															done = true;
+														}
+													}
+													else if(relation == K_OR)
+													{
+														int total = 0;
+														int rows_satisfy_condition = 0;
+														int position_where1 = 0;
+														int position_where2 = 0;
+														int limiter1 = column_number_where1-1;
+														int limiter2 = column_number_where2-1;
+														if(operationwhere2 == S_EQUAL)
+														{
+															if(columns == column_number_where1)
+															{
+																position_where1 = offset+1;
+															}
+															else
+															{
+																position_where1 = offset+1;
+															}
+
+															if(columns == column_number_where2)
+															{
+																position_where2 = offset+1;
+															}
+															else
+															{
+																position_where2 = offset+1;
+															}
+															
+															for(int i = 0; i < limiter1; i++)
+															{
+																if(column_number_where1 == 1)
+																{
+																	position_where1 += 1;
+																	i == column_number_where1+1;
+																}
+																else
+																{
+																	position_where1 += column_lengths[i]+1;
+																}
+															}
+															for(int j = 0; j < limiter2; j++)
+															{
+																if(column_number_where2 == 1)
+																{
+																	position_where2 += 1;
+																	i == column_number_where2+1;
+																}
+																else
+																{
+																	position_where2 += column_lengths[j]+1;
+																//	printf("position of 1st where condition: %d\n", position_where1);
+																}
+															}
+															printf("position of 1st where condition: %d\n", position_where1);
+															printf("position of 2nd where condition: %d\n", position_where2);
+															for(int k = 0; k < rows_inserted; k++)
+															{
+																if((fseek(flook, position_where1, SEEK_SET)) == 0)
+																{
+																	char *condition1tablechar = (char*)malloc(column_lengths[column_number_where1-1]+1);
+																	fread(condition1tablechar, column_lengths[column_number_where1-1], 1, flook);
+																	printf("condition 1 to check: %s\n", condition1tablechar);
+																	
+																	if(strcmp(where1comparisonvalue,condition1tablechar) == 0)
+																	{
+																		if((fseek(flook, position, SEEK_SET)) == 0)
+																		{
+																			fread(&table_value, sizeof(int), 1, flook);
+																			printf("table value: %d\n", table_value);
+																			total += table_value;
+																			rows_satisfy_condition++;
+																		}
+																	}
+																	else
+																	{
+																		if((fseek(flook, position_where2, SEEK_SET)) == 0)
+																		{
+																			if(column_type[column_number_where2-1] == T_CHAR)
+																			{
+																				char *condition2tablestring = (char*)malloc(column_lengths[column_number_where1]+1);
+																				fread(condition2tablestring, column_lengths[column_number_where1], 1, flook);
+																				printf("condition 2 to check: %s\n", condition2tablestring);
+																				if(strcmp(where2comparisonvaluechar, condition2tablestring) == 0)
+																				{
+																					fread(&table_value, sizeof(int), 1, flook);
+																					printf("table value: %d\n", table_value);
+																					total += table_value;
+																					rows_satisfy_condition++;
+																				}
+																			}
+																			else if(column_type[column_number_where2-1] == T_INT)
+																			{
+																				int condition2tableint = 0;
+																				fread(&condition2tableint, sizeof(int), 1, flook);
+																				printf("condition 2 to check: %d\n", condition2tableint);
+																				if(where2comparisonvalueint == condition2tableint)
+																				{
+																					if((fseek(flook, position, SEEK_SET)) == 0)
+																					{
+																						fread(&table_value, sizeof(int), 1, flook);
+																						printf("table value: %d\n", table_value);
+																						total += table_value;
+																						rows_satisfy_condition++;
+																					}
+																				}
+																			}
+																		}
+																	}
+																}
+																position += record_size;
+																position_where1 += record_size;
+																position_where2 += record_size;
+															}
+															if((total > 0) && (rows_satisfy_condition > 0))
+															{
+																double answer = (double)total/(double)rows_satisfy_condition;
+																printf("Average: %0.2f\n", answer);
+																done = true;
+															}
+															else
+															{
+																printf("Average: 0.00\n");
+																done = true;
+															}
+														}
+														else if(operationwhere2 == S_LESS)
+														{
+															if(columns == column_number_where1)
+															{
+																position_where1 = offset+1;	
+															}
+															else
+															{
+																position_where1 = offset+1;
+															}
+
+															if(columns == column_number_where2)
+															{
+																position_where2 = offset+1;
+															}
+															else
+															{
+																position_where2 = offset+1;
+															}
+															
+															for(int i = 0; i < limiter1; i++)
+															{
+																if(column_number_where1 == 1)
+																{
+																	position_where1 += 1;
+																	i == column_number_where1+1;
+																}
+																else
+																{
+																	position_where1 += column_lengths[i]+1;
+																}
+															}
+															for(int j = 0; j < limiter2; j++)
+															{
+																if(column_number_where2 == 1)
+																{
+																	position_where2 += 1;
+																	i == column_number_where2+1;
+																}
+																else
+																{
+																	position_where2 += column_lengths[j]+1;
+																//	printf("position of 1st where condition: %d\n", position_where1);
+																}
+															}
+															printf("position of 1st where condition: %d\n", position_where1);
+															printf("position of 2nd where condition: %d\n", position_where2);
+															for(int k = 0; k < rows_inserted; k++)
+															{
+																if((fseek(flook, position_where1, SEEK_SET)) == 0)
+																{
+																	char *condition1tablechar = (char*)malloc(column_lengths[column_number_where1-1]+1);
+																	fread(condition1tablechar, column_lengths[column_number_where1-1], 1, flook);
+																	printf("condition 1 to check: %s\n", condition1tablechar);
+																	
+																	if(strcmp(where1comparisonvalue,condition1tablechar) < 0)
+																	{
+																		fread(&table_value, sizeof(int), 1, flook);
+																		printf("table value: %d\n", table_value);
+																		total += table_value;
+																		rows_satisfy_condition++;
+																	}
+																	else
+																	{
+																		if((fseek(flook, position_where2, SEEK_SET)) == 0)
+																		{
+																			if(column_type[column_number_where2-1] == T_CHAR)
+																			{
+																				char *condition2tablestring = (char*)malloc(column_lengths[column_number_where1]+1);
+																				fread(condition2tablestring, column_lengths[column_number_where1], 1, flook);
+																				printf("condition 2 to check: %s\n", condition2tablestring);
+																				if(strcmp(where2comparisonvaluechar, condition2tablestring) < 0)
+																				{
+																					if((fseek(flook, position, SEEK_SET)) == 0)
+																					{
+																						fread(&table_value, sizeof(int), 1, flook);
+																						printf("table value: %d\n", table_value);
+																						total += table_value;
+																						rows_satisfy_condition++;
+																					}
+																				}
+																			}
+																			else if(column_type[column_number_where2-1] == T_INT)
+																			{
+																				int condition2tableint = 0;
+																				fread(&condition2tableint, sizeof(int), 1, flook);
+																				printf("condition 2 to check: %d\n", condition2tableint);
+																				if(where2comparisonvalueint < condition2tableint)
+																				{
+																					if((fseek(flook, position, SEEK_SET)) == 0)
+																					{
+																						fread(&table_value, sizeof(int), 1, flook);
+																						printf("table value: %d\n", table_value);
+																						total += table_value;
+																						rows_satisfy_condition++;
+																					}
+																				}
+																			}
+																		}
+																	}
+																}
+																position += record_size;
+																position_where1 += record_size;
+																position_where2 += record_size;
+															}
+															if((total > 0) && (rows_satisfy_condition > 0))
+															{
+																double answer = (double)total/(double)rows_satisfy_condition;
+																printf("Average: %0.2f\n", answer);
+																done = true;
+															}
+															else
+															{
+																printf("Average: 0.00\n");
+																done = true;
+															}
+														}
+														else if(operationwhere2 == S_GREATER)
+														{
+															if(columns == column_number_where1)
+															{
+																position_where1 = offset+1;	
+															}
+															else
+															{
+																position_where1 = offset+1;
+															}
+
+															if(columns == column_number_where2)
+															{
+																position_where2 = offset+1;
+															}
+															else
+															{
+																position_where2 = offset+1;
+															}
+															
+															for(int i = 0; i < limiter1; i++)
+															{
+																if(column_number_where1 == 1)
+																{
+																	position_where1 += 1;
+																	i == column_number_where1+1;
+																}
+																else
+																{
+																	position_where1 += column_lengths[i]+1;
+																}
+															}
+															for(int j = 0; j < limiter2; j++)
+															{
+																if(column_number_where2 == 1)
+																{
+																	position_where2 += 1;
+																	i == column_number_where2+1;
+																}
+																else
+																{
+																	position_where2 += column_lengths[j]+1;
+																//	printf("position of 1st where condition: %d\n", position_where1);
+																}
+															}
+															printf("position of 1st where condition: %d\n", position_where1);
+															printf("position of 2nd where condition: %d\n", position_where2);
+															for(int k = 0; k < rows_inserted; k++)
+															{
+																if((fseek(flook, position_where1, SEEK_SET)) == 0)
+																{
+																	char *condition1tablechar = (char*)malloc(column_lengths[column_number_where1-1]+1);
+																	fread(condition1tablechar, column_lengths[column_number_where1-1], 1, flook);
+																	printf("condition 1 to check: %s\n", condition1tablechar);
+																	
+																	if(strcmp(where1comparisonvalue,condition1tablechar) > 0)
+																	{
+																		fread(&table_value, sizeof(int), 1, flook);
+																		printf("table value: %d\n", table_value);
+																		total += table_value;
+																		rows_satisfy_condition++;
+																	}
+																	else
+																	{
+																		if((fseek(flook, position_where2, SEEK_SET)) > 0)
+																		{
+																			if(column_type[column_number_where2-1] == T_CHAR)
+																			{
+																				char *condition2tablestring = (char*)malloc(column_lengths[column_number_where1]+1);
+																				fread(condition2tablestring, column_lengths[column_number_where1], 1, flook);
+																				printf("condition 2 to check: %s\n", condition2tablestring);
+																				if(strcmp(where2comparisonvaluechar, condition2tablestring) > 0)
+																				{
+																					if((fseek(flook, position, SEEK_SET)) == 0)
+																					{
+																						fread(&table_value, sizeof(int), 1, flook);
+																						printf("table value: %d\n", table_value);
+																						total += table_value;
+																						rows_satisfy_condition++;
+																					}
+																				}
+																			}
+																			else if(column_type[column_number_where2-1] == T_INT)
+																			{
+																				int condition2tableint = 0;
+																				fread(&condition2tableint, sizeof(int), 1, flook);
+																				printf("condition 2 to check: %d\n", condition2tableint);
+																				if(where2comparisonvalueint > condition2tableint)
+																				{
+																					if((fseek(flook, position, SEEK_SET)) == 0)
+																					{
+																						fread(&table_value, sizeof(int), 1, flook);
+																						printf("table value: %d\n", table_value);
+																						total += table_value;
+																						rows_satisfy_condition++;
+																					}
+																				}
+																			}
+																		}
+																	}
+																}
+																position += record_size;
+																position_where1 += record_size;
+																position_where2 += record_size;
+															}
+															if((total > 0) && (rows_satisfy_condition > 0))
+															{
+																double answer = (double)total/(double)rows_satisfy_condition;
+																printf("Average: %0.2f\n", answer);
+																done = true;
+															}
+															else
+															{
+																printf("Average: 0.00\n");
+																done = true;
+															}
+														}
+														else
+														{
+															rc = INVALID_OPERATOR;
+															read->tok_value = INVALID;
+															done = true;
+														}
+													}
+													else
+													{
+														rc = INVALID_KEYWORD;
+														read->tok_value = INVALID;
+														done = true;
+													}
+												}
+											}
+											else
+											{
+												rc = COLUMN_NOT_EXIST;
+												read->tok_value = INVALID;
+												done = true;
+											}
+										}
+										else if((read->next->tok_value == EOC) && (read->next->tok_value == INT_LITERAL))
+										{
+											read = read->next;
+											printf("one where condition\n");
+										}
+										else
+										{
+											rc = INVALID_AVG_SYNTAX;
+											read->tok_value = INVALID;
+											done = true;
+										}
+									}//first where column condition is a char
+								}
+								else if(operationwhere1 == S_LESS)
+								{
+									read = read->next;
+									printf("current token: %s\n", read->tok_string);
+									printf("next token:%s\n", read->next->tok_string);
+									if(column_type[column_number_where1-1] == T_INT)
+									{
+										if((read->next->tok_value != EOC) && (read->next->tok_class == keyword))
+										{
+											int where1comparisonvalue = atoi(read->tok_string);
+											read = read->next;
+											int relation = read->tok_value;
+											read = read->next;
+											printf("relation is: %d\ntwo where conditions, current token: %s\n", relation, read->tok_string);
+											int column_number_where2 = 0;
+											bool foundwhere2Column = false;
+											char *where2ColumnName = (char*)malloc(strlen(read->tok_string)+1);
+											strcat(where2ColumnName, read->tok_string);
+											printf("column to filter through is: %s\n", where2ColumnName);
+											for(i = 0, test_entry = (cd_entry*)((char*)tab_entry + tab_entry->cd_offset);
+																	i < tab_entry->num_columns; i++, test_entry++)
+											{
+												char *tableColumnName = NULL;
+												tableColumnName = (char*)malloc(strlen(test_entry->col_name)+1);
+												strcat(tableColumnName, test_entry->col_name);
+												if(strcmp(where2ColumnName,tableColumnName) == 0)
+												{
+													column_number_where2 = i+1;
+													foundwhere2Column = true;
+												}
+											}
+											if(foundwhere2Column)
+											{
+												printf("2nd where condition is in column: %d\n", column_number_where2);
+												read = read->next;
+												if(read->tok_value == EOC)
+												{
+													rc = INVALID_AVG_SYNTAX;
+													read->tok_value = INVALID;
+													done = true;
+												}
+												else
+												{
+													operationwhere2 = read->tok_value;
+													read = read->next;
+													printf("%s\n", read->tok_string);
+													printf("%d\n", operationwhere2);
+													char *where2comparisonvaluechar = (char *)malloc(column_lengths[column_number_where2-1]+1);
+													where2comparisonvaluechar = read->tok_string;
+													int where2comparisonvalueint = atoi(read->tok_string);
+													printf("operation = %d\n", operationwhere2);
+													if(relation == K_AND)
+													{
+														int total = 0;
+														int rows_satisfy_condition = 0;
+														int position_where1 = 0;
+														int position_where2 = 0;
+														int limiter1 = column_number_where1-1;
+														int limiter2 = column_number_where2-1;
+														if(operationwhere2 == S_EQUAL)
+														{
+															if(columns == column_number_where1)
+															{
+																position_where1 = offset+1;
+															}
+															else
+															{
+																position_where1 = offset+1;
+															}
+
+															if(columns == column_number_where2)
+															{
+																position_where2 = offset+1;
+															}
+															else
+															{
+																position_where2 = offset+1;
+															}
+															
+															for(int i = 0; i < limiter1; i++)
+															{
+																if(column_number_where1 == 1)
+																{
+																	position_where1 += 1;
+																	i == column_number_where1+1;
+																}
+																else
+																{
+																	position_where1 += column_lengths[i]+1;
+																}
+															}
+															for(int j = 0; j < limiter2; j++)
+															{
+																if(column_number_where2 == 1)
+																{
+																	position_where2 += 1;
+																	i == column_number_where2+1;
+																}
+																else
+																{
+																	position_where2 += column_lengths[j]+1;
+																//	printf("position of 1st where condition: %d\n", position_where1);
+																}
+															}
+															printf("position of 1st where condition: %d\n", position_where1);
+															printf("position of 2nd where condition: %d\n", position_where2);
+															for(int k = 0; k < rows_inserted; k++)
+															{
+																if((fseek(flook, position_where1, SEEK_SET)) == 0)
+																{
+																	int condition1tableint = 0;
+																	fread(&condition1tableint, sizeof(int), 1, flook);
+																	printf("condition 1 to check: %d\n", condition1tableint);
+																	
+																	if(where1comparisonvalue > condition1tableint)
+																	{
+																		if((fseek(flook, position_where2, SEEK_SET)) == 0)
+																		{
+																			if(column_type[column_number_where2-1] == T_CHAR)
+																			{
+																				char *condition2tablestring = (char*)malloc(column_lengths[column_number_where1]+1);
+																				fread(condition2tablestring, column_lengths[column_number_where1], 1, flook);
+																				printf("condition 2 to check: %s\n", condition2tablestring);
+																				if(strcmp(where2comparisonvaluechar, condition2tablestring) == 0)
+																				{
+																					if((fseek(flook, position, SEEK_SET)) == 0)
+																					{
+																						fread(&table_value, sizeof(int), 1, flook);
+																						printf("table value: %d\n", table_value);
+																						total += table_value;
+																						rows_satisfy_condition++;
+																					}
+																				}
+																			}
+																			else if(column_type[column_number_where2-1] == T_INT)
+																			{
+																				int condition2tableint = 0;
+																				fread(&condition2tableint, sizeof(int), 1, flook);
+																				printf("condition 2 to check: %d\n", condition2tableint);
+																				if(where2comparisonvalueint == condition2tableint)
+																				{
+																					if((fseek(flook, position, SEEK_SET)) == 0)
+																					{
+																						fread(&table_value, sizeof(int), 1, flook);
+																						printf("table value: %d\n", table_value);
+																						total += table_value;
+																						rows_satisfy_condition++;
+																					}
+																				}
+																			}
+																		}
+																	}
+																}
+																position += record_size;
+																position_where1 += record_size;
+																position_where2 += record_size;
+															}
+															if((total > 0) && (rows_satisfy_condition > 0))
+															{
+																double answer = (double)total/(double)rows_satisfy_condition;
+																printf("Average: %0.2f\n", answer);
+																done = true;
+															}
+															else
+															{
+																printf("Average: 0.00\n");
+																done = true;
+															}
+														}
+														else if(operationwhere2 == S_LESS)
+														{
+															if(columns == column_number_where1)
+															{
+																position_where1 = offset+1;	
+															}
+															else
+															{
+																position_where1 = offset+1;
+															}
+
+															if(columns == column_number_where2)
+															{
+																position_where2 = offset+1;
+															}
+															else
+															{
+																position_where2 = offset+1;
+															}
+															
+															for(int i = 0; i < limiter1; i++)
+															{
+																if(column_number_where1 == 1)
+																{
+																	position_where1 += 1;
+																	i == column_number_where1+1;
+																}
+																else
+																{
+																	position_where1 += column_lengths[i]+1;
+																}
+															}
+															for(int j = 0; j < limiter2; j++)
+															{
+																if(column_number_where2 == 1)
+																{
+																	position_where2 += 1;
+																	i == column_number_where2+1;
+																}
+																else
+																{
+																	position_where2 += column_lengths[j]+1;
+																//	printf("position of 1st where condition: %d\n", position_where1);
+																}
+															}
+															printf("position of 1st where condition: %d\n", position_where1);
+															printf("position of 2nd where condition: %d\n", position_where2);
+															for(int k = 0; k < rows_inserted; k++)
+															{
+																if((fseek(flook, position_where1, SEEK_SET)) == 0)
+																{
+																	int condition1tableint = 0;
+																	fread(&condition1tableint, sizeof(int), 1, flook);
+																	printf("condition 1 to check: %d\n", condition1tableint);
+																	
+																	if(where1comparisonvalue > condition1tableint)
+																	{
+																		if((fseek(flook, position_where2, SEEK_SET)) == 0)
+																		{
+																			if(column_type[column_number_where2-1] == T_CHAR)
+																			{
+																				char *condition2tablestring = (char*)malloc(column_lengths[column_number_where1]+1);
+																				fread(condition2tablestring, column_lengths[column_number_where1], 1, flook);
+																				printf("condition 2 to check: %s\n", condition2tablestring);
+																				if(strcmp(where2comparisonvaluechar, condition2tablestring) < 0)
+																				{
+																					if((fseek(flook, position, SEEK_SET)) == 0)
+																					{
+																						fread(&table_value, sizeof(int), 1, flook);
+																						printf("table value: %d\n", table_value);
+																						total += table_value;
+																						rows_satisfy_condition++;
+																					}
+																				}
+																			}
+																			else if(column_type[column_number_where2-1] == T_INT)
+																			{
+																				int condition2tableint = 0;
+																				fread(&condition2tableint, sizeof(int), 1, flook);
+																				printf("condition 2 to check: %d\n", condition2tableint);
+																				if(where2comparisonvalueint < condition2tableint)
+																				{
+																					if((fseek(flook, position, SEEK_SET)) == 0)
+																					{
+																						fread(&table_value, sizeof(int), 1, flook);
+																						printf("table value: %d\n", table_value);
+																						total += table_value;
+																						rows_satisfy_condition++;
+																					}
+																				}
+																			}
+																		}
+																	}
+																}
+																position += record_size;
+																position_where1 += record_size;
+																position_where2 += record_size;
+															}
+															if((total > 0) && (rows_satisfy_condition > 0))
+															{
+																double answer = (double)total/(double)rows_satisfy_condition;
+																printf("Average: %0.2f\n", answer);
+																done = true;
+															}
+															else
+															{
+																printf("Average: 0.00\n");
+																done = true;
+															}
+														}
+														else if(operationwhere2 == S_GREATER)
+														{
+															if(columns == column_number_where1)
+															{
+																position_where1 = offset+1;	
+															}
+															else
+															{
+																position_where1 = offset+1;
+															}
+
+															if(columns == column_number_where2)
+															{
+																position_where2 = offset+1;
+															}
+															else
+															{
+																position_where2 = offset+1;
+															}
+															
+															for(int i = 0; i < limiter1; i++)
+															{
+																if(column_number_where1 == 1)
+																{
+																	position_where1 += 1;
+																	i == column_number_where1+1;
+																}
+																else
+																{
+																	position_where1 += column_lengths[i]+1;
+																}
+															}
+															for(int j = 0; j < limiter2; j++)
+															{
+																if(column_number_where2 == 1)
+																{
+																	position_where2 += 1;
+																	i == column_number_where2+1;
+																}
+																else
+																{
+																	position_where2 += column_lengths[j]+1;
+																//	printf("position of 1st where condition: %d\n", position_where1);
+																}
+															}
+															printf("position of 1st where condition: %d\n", position_where1);
+															printf("position of 2nd where condition: %d\n", position_where2);
+															for(int k = 0; k < rows_inserted; k++)
+															{
+																if((fseek(flook, position_where1, SEEK_SET)) == 0)
+																{
+																	int condition1tableint = 0;
+																	fread(&condition1tableint, sizeof(int), 1, flook);
+																	printf("condition 1 to check: %d\n", condition1tableint);
+																	
+																	if(where1comparisonvalue > condition1tableint)
+																	{
+																		if((fseek(flook, position_where2, SEEK_SET)) == 0)
+																		{
+																			if(column_type[column_number_where2-1] == T_CHAR)
+																			{
+																				char *condition2tablestring = (char*)malloc(column_lengths[column_number_where1]+1);
+																				fread(condition2tablestring, column_lengths[column_number_where1], 1, flook);
+																				printf("condition 2 to check: %s\n", condition2tablestring);
+																				if(strcmp(where2comparisonvaluechar, condition2tablestring) > 0)
+																				{
+																					if((fseek(flook, position, SEEK_SET)) == 0)
+																					{
+																						fread(&table_value, sizeof(int), 1, flook);
+																						printf("table value: %d\n", table_value);
+																						total += table_value;
+																						rows_satisfy_condition++;
+																					}
+																				}
+																			}
+																			else if(column_type[column_number_where2-1] == T_INT)
+																			{
+																				int condition2tableint = 0;
+																				fread(&condition2tableint, sizeof(int), 1, flook);
+																				printf("condition 2 to check: %d\n", condition2tableint);
+																				if(where2comparisonvalueint > condition2tableint)
+																				{
+																					if((fseek(flook, position, SEEK_SET)) == 0)
+																					{
+																						fread(&table_value, sizeof(int), 1, flook);
+																						printf("table value: %d\n", table_value);
+																						total += table_value;
+																						rows_satisfy_condition++;
+																					}
+																				}
+																			}
+																		}
+																	}
+																}
+																position += record_size;
+																position_where1 += record_size;
+																position_where2 += record_size;
+															}
+															if((total > 0) && (rows_satisfy_condition > 0))
+															{
+																double answer = (double)total/(double)rows_satisfy_condition;
+																printf("Average: %0.2f\n", answer);
+																done = true;
+															}
+															else
+															{
+																printf("Average: 0.00\n");
+																done = true;
+															}
+														}
+														else
+														{
+															rc = INVALID_OPERATOR;
+															read->tok_value = INVALID;
+															done = true;
+														}
+													}
+													else if(relation == K_OR)
+													{
+														if(operationwhere2 == S_EQUAL)
+														{
+
+														}
+														else if(operationwhere2 == S_LESS)
+														{
+
+														}
+														else if(operationwhere2 == S_GREATER)
+														{
+
+														}
+														else
+														{
+															rc = INVALID_OPERATOR;
+															read->tok_value = INVALID;
+															done = true;
+														}
+													}
+													else
+													{
+														rc = INVALID_KEYWORD;
+														read->tok_value = INVALID;
+														done = true;
+													}
+												}
+											}
+											else
+											{
+												rc = COLUMN_NOT_EXIST;
+												read->tok_value = INVALID;
+												done = true;
+											}
+										}
+										else if((read->next->tok_value == EOC) && (read->next->tok_value == INT_LITERAL))
+										{
+											read = read->next;
+											printf("one where condition\n");
+										}
+										else
+										{
+											rc = INVALID_AVG_SYNTAX;
+											read->tok_value = INVALID;
+											done = true;
+										}
+									}//first where condition is a int
+									else if(column_type[column_number_where1-1] == T_CHAR)
+									{
+										char *condition1checkstring = (char*)malloc(column_lengths[column_number_where1]+1);
+																	fread(condition1checkstring, column_lengths[column_number_where1], 1, flook);
+																	printf("condition 1 to check: %s\n", condition1checkstring);
+										if((read->next->tok_value != EOC) && (read->next->tok_class == keyword))
+										{
+											read = read->next;
+											int relation = read->tok_value;
+											read = read->next;
+											printf("relation is: %d\ntwo where conditions, current token: \n", relation, read->tok_string);
+											int column_number_where2 = 0;
+											bool foundwhere2Column = false;
+											char *where2ColumnName = (char*)malloc(strlen(read->tok_string)+1);
+											strcat(where2ColumnName, read->tok_string);
+											printf("column to filter through is: %s\n", where2ColumnName);
+											for(i = 0, test_entry = (cd_entry*)((char*)tab_entry + tab_entry->cd_offset);
+																	i < tab_entry->num_columns; i++, test_entry++)
+											{
+												char *tableColumnName = NULL;
+												tableColumnName = (char*)malloc(strlen(test_entry->col_name)+1);
+												strcat(tableColumnName, test_entry->col_name);
+												if(strcmp(where1ColumnName,tableColumnName) == 0)
+												{
+													column_number_where2 = i+1;
+													foundwhere2Column = true;
+												}
+											}
+											if(foundwhere2Column)
+											{
+												printf("two where columns!\n");
+												read = read->next;
+												if(read->tok_value == EOC)
+												{
+													rc = INVALID_AVG_SYNTAX;
+													read->tok_value = INVALID;
+													done = true;
+												}
+												else
+												{
+													operationwhere2 = read->tok_value;
+													printf("operation = %d\n", operationwhere2);
+													if(relation == K_AND)
+													{
+														if(operationwhere2 == S_EQUAL)
+														{
+
+														}
+														else if(operationwhere2 == S_LESS)
+														{
+
+														}
+														else if(operationwhere2 == S_GREATER)
+														{
+
+														}
+														else
+														{
+															rc = INVALID_OPERATOR;
+															read->tok_value = INVALID;
+															done = true;
+														}
+													}
+													else if(relation == K_OR)
+													{
+														if(operationwhere2 == S_EQUAL)
+														{
+
+														}
+														else if(operationwhere2 == S_LESS)
+														{
+
+														}
+														else if(operationwhere2 == S_GREATER)
+														{
+
+														}
+														else
+														{
+															rc = INVALID_OPERATOR;
+															read->tok_value = INVALID;
+															done = true;
+														}
+													}
+													else
+													{
+														rc = INVALID_KEYWORD;
+														read->tok_value = INVALID;
+														done = true;
+													}
+												}
+											}
+											else
+											{
+												rc = COLUMN_NOT_EXIST;
+												read->tok_value = INVALID;
+												done = true;
+											}
+										}//two where conditions
+										else if((read->next->tok_value == EOC) && (read->next->tok_value == STRING_LITERAL))
+										{
+
+										}//one where condition
+										else
+										{
+											rc = INVALID_AVG_SYNTAX;
+											read->tok_value = INVALID;
+											done = true;
+										}
+									}//first where column condition is a char
+								}
+								else if(operationwhere1 == S_GREATER)
+								{
+									read = read->next;
+									if(column_type[column_number_where1-1] == T_INT)
+									{
+										if((read->next->tok_value != EOC) && (read->next->tok_class == keyword))
+										{
+											read = read->next;
+											int relation = read->tok_value;
+											read = read->next;
+											printf("relation is: %d\ntwo where conditions, current token: \n", relation, read->tok_string);
+											int column_number_where2 = 0;
+											bool foundwhere2Column = false;
+											char *where2ColumnName = (char*)malloc(strlen(read->tok_string)+1);
+											strcat(where2ColumnName, read->tok_string);
+											printf("column to filter through is: %s\n", where2ColumnName);
+											for(i = 0, test_entry = (cd_entry*)((char*)tab_entry + tab_entry->cd_offset);
+																	i < tab_entry->num_columns; i++, test_entry++)
+											{
+												char *tableColumnName = NULL;
+												tableColumnName = (char*)malloc(strlen(test_entry->col_name)+1);
+												strcat(tableColumnName, test_entry->col_name);
+												if(strcmp(where1ColumnName,tableColumnName) == 0)
+												{
+													column_number_where2 = i+1;
+													foundwhere2Column = true;
+												}
+											}
+											if(foundwhere2Column)
+											{
+												printf("two where columns!\n");
+												read = read->next;
+												if(read->tok_value == EOC)
+												{
+													rc = INVALID_AVG_SYNTAX;
+													read->tok_value = INVALID;
+													done = true;
+												}
+												else
+												{
+													operationwhere2 = read->tok_value;
+													printf("operation = %d\n", operationwhere2);
+													if(relation == K_AND)
+													{
+														if(operationwhere2 == S_EQUAL)
+														{
+
+														}
+														else if(operationwhere2 == S_LESS)
+														{
+
+														}
+														else if(operationwhere2 == S_GREATER)
+														{
+
+														}
+														else
+														{
+															rc = INVALID_OPERATOR;
+															read->tok_value = INVALID;
+															done = true;
+														}
+													}
+													else if(relation == K_OR)
+													{
+														if(operationwhere2 == S_EQUAL)
+														{
+
+														}
+														else if(operationwhere2 == S_LESS)
+														{
+
+														}
+														else if(operationwhere2 == S_GREATER)
+														{
+
+														}
+														else
+														{
+															rc = INVALID_OPERATOR;
+															read->tok_value = INVALID;
+															done = true;
+														}
+													}
+													else
+													{
+														rc = INVALID_KEYWORD;
+														read->tok_value = INVALID;
+														done = true;
+													}
+												}
+											}
+											else
+											{
+												rc = COLUMN_NOT_EXIST;
+												read->tok_value = INVALID;
+												done = true;
+											}
+										}
+										else if((read->next->tok_value == EOC) && (read->next->tok_value == INT_LITERAL))
+										{
+
+										}
+										else
+										{
+											rc = INVALID_AVG_SYNTAX;
+											read->tok_value = INVALID;
+											done = true;
+										}
+									}
+									else if(column_type[column_number_where1-1] == T_CHAR)
+									{
+										if((read->next->tok_value != EOC) && (read->next->tok_class == keyword))
+										{
+											read = read->next;
+											int relation = read->tok_value;
+											read = read->next;
+											printf("relation is: %d\ntwo where conditions, current token: \n", relation, read->tok_string);
+											int column_number_where2 = 0;
+											bool foundwhere2Column = false;
+											char *where2ColumnName = (char*)malloc(strlen(read->tok_string)+1);
+											strcat(where2ColumnName, read->tok_string);
+											printf("column to filter through is: %s\n", where2ColumnName);
+											for(i = 0, test_entry = (cd_entry*)((char*)tab_entry + tab_entry->cd_offset);
+																	i < tab_entry->num_columns; i++, test_entry++)
+											{
+												char *tableColumnName = NULL;
+												tableColumnName = (char*)malloc(strlen(test_entry->col_name)+1);
+												strcat(tableColumnName, test_entry->col_name);
+												if(strcmp(where1ColumnName,tableColumnName) == 0)
+												{
+													column_number_where2 = i+1;
+													foundwhere2Column = true;
+												}
+											}
+											if(foundwhere2Column)
+											{
+												printf("two where columns!\n");
+												read = read->next;
+												if(read->tok_value == EOC)
+												{
+													rc = INVALID_AVG_SYNTAX;
+													read->tok_value = INVALID;
+													done = true;
+												}
+												else
+												{
+													operationwhere2 = read->tok_value;
+													printf("operation = %d\n", operationwhere2);
+													if(relation == K_AND)
+													{
+														if(operationwhere2 == S_EQUAL)
+														{
+
+														}
+														else if(operationwhere2 == S_LESS)
+														{
+
+														}
+														else if(operationwhere2 == S_GREATER)
+														{
+
+														}
+														else
+														{
+															rc = INVALID_OPERATOR;
+															read->tok_value = INVALID;
+															done = true;
+														}
+													}
+													else if(relation == K_OR)
+													{
+														if(operationwhere2 == S_EQUAL)
+														{
+
+														}
+														else if(operationwhere2 == S_LESS)
+														{
+
+														}
+														else if(operationwhere2 == S_GREATER)
+														{
+
+														}
+														else
+														{
+															rc = INVALID_OPERATOR;
+															read->tok_value = INVALID;
+															done = true;
+														}
+													}
+													else
+													{
+														rc = INVALID_KEYWORD;
+														read->tok_value = INVALID;
+														done = true;
+													}
+												}
+											}
+											else
+											{
+												rc = COLUMN_NOT_EXIST;
+												read->tok_value = INVALID;
+												done = true;
+											}
+										}
+										else if((read->next->tok_value == EOC) && (read->next->tok_value == STRING_LITERAL))
+										{
+
+										}
+										else
+										{
+											rc = INVALID_AVG_SYNTAX;
+											read->tok_value = INVALID;
+											done = true;
+										}
+									}
+								}
+								else
+								{
+									rc = INVALID_OPERATOR;
+									read->tok_value = INVALID;
+									done = true;
+								}
+							}
+						}
+						else
+						{
+							rc = INVALID_AVG_SYNTAX;
+							read->tok_value = INVALID;
+							done = true;
+						}
+					}
+					else
+					{
+						rc = INVALID_AVG_SYNTAX;
+						read->tok_value = INVALID;
+						done = true;
+					}
+				}
+				
+			}
+		}//while not done and no rc
+	}
+	return rc;
+}
+int sem_select(token_list *t_list)
+{
+	int rc = 0;
+	int rows_inserted = 0;
+	int record_size = 0;
+	int i = 0;
+	int column_type, column_length, input_length, counter = 0;
+	int offset = 0;
+	token_list *read;
+	tpd_entry *tab_entry = NULL;
+	cd_entry *test_entry = NULL;
+
+	FILE *flook = NULL;
+	read = t_list;
+
+	if((tab_entry = get_tpd_from_list(read->next->next->tok_string)) == NULL)
+	{
+		rc = TABLE_NOT_EXIST;
+		read->tok_value = INVALID;
+	}
+	else
+	{
+		char* extensionName = ".tab";
+		char* TableName = (char*)malloc(strlen(tab_entry->table_name) + strlen(extensionName) + 1);
+		strcat(TableName, tab_entry->table_name);
+		strcat(TableName, extensionName);
+		if((flook = fopen(TableName, "rbc")) == NULL)
+		{
+			rc = FILE_OPEN_ERROR;
+			read->tok_value = INVALID;
+		}
+		if((fseek(flook, 4, SEEK_SET)) == 0)
+			{
+				fread(&record_size, sizeof(int), 1, flook);
+				fflush(stdout);
+				printf("Record size: %d\n", record_size);
+			}
+		//look for number of rows in the file
+		if((fseek(flook, 8, SEEK_SET)) == 0)
+		{
+			fread(&rows_inserted, sizeof(int), 1, flook);
+			printf("Rows in table: %d\n", rows_inserted);
+		}
+		if((fseek(flook, 12, SEEK_SET)) == 0)
+		{
+			fread(&offset, sizeof(int), 1, flook);
+		// 	printf("Offset value: %d\n", offset);
+		}
+
+		int columns = tab_entry->num_columns;
+		int *column_lengths = new int[columns];
+		int *column_type = new int[columns];
+
+		char *header = "+----------------";
+		char *end_header = "+----------------+";
+		for(i = 0; i < columns; i++)
+		{
+			if(i == (columns-1))
+			{
+				printf("%s\n", end_header);
+			}
+			else
+			{
+				printf("%s", header);
+			}
+		}
+		for(i = 0, test_entry = (cd_entry*)((char*)tab_entry + tab_entry->cd_offset);
+								i < tab_entry->num_columns; i++, test_entry++)
+		{
+			column_lengths[i] = test_entry->col_len;
+			column_type[i] = test_entry->col_type;
+			if(i == (tab_entry->num_columns-1))
+			{
+				printf("|%-16s|\n", test_entry->col_name);
+			}
+			else
+			{
+				printf("|%-16s", test_entry->col_name);	
+			}
+			
+		}
+		for(i = 0; i < columns; i++)
+		{
+			if(i == (columns-1))
+			{
+				printf("%s\n", end_header);
+			}
+			else
+			{
+				printf("%s", header);
+			}
+		}
+		int position = offset;
+		int rows_selected = 0;
+		char *char_input = NULL;
+		int int_input = 0;
+		int length = 0;
+		int which_one = columns-1;
+		int answer = rows_inserted*columns;
+		int index = 0;
+		for(i = 0; i < answer; i++)
+		{
+			if(i >= which_one)
+			{
+				index = i%columns;
+				length = column_lengths[index];
+				char_input = (char*)malloc(column_lengths[index]+1);
+			}
+			else
+			{
+				char_input = (char*)malloc(column_lengths[i]+1);
+				length = column_lengths[i];
+			}
+			input_length = 0;
+
+			if((fseek(flook, position, SEEK_SET)) == 0)
+			{
+				fread(&input_length, 1, 1, flook);
+				counter += 1;
+				position += 1;
+				if((fseek(flook, position, SEEK_SET)) == 0)
+				{
+					if(i >= columns)
+					{
+					//	printf("this is the %d row\n", i);
+						if(column_type[index] == T_INT)
+						{
+							fflush(stdout);
+							fread(&int_input, sizeof(int), 1, flook);
+
+							if(((i+1) % columns) == 0)
+							{
+								fflush(stdout);
+								printf("|%16d|\n", int_input);
+								rows_selected +=1;
+								if(record_size > counter)
+								{
+									fflush(stdout);
+									int add = record_size - counter;
+									position += add;
+									counter = 0;
+								}
+								else
+								{
+									counter += 4;
+									position += 4;
+								}
+								
+							}
+							else
+							{
+								fflush(stdout);
+								printf("|%16d", int_input);
+								counter += 4;
+								position += 4;
+							}
+						}
+						else if(column_type[index] == T_CHAR)
+						{
+							fread(char_input, length, 1, flook);
+							fflush(stdout);
+							if(i == columns-1)
+							{	
+								printf("|%-16s|\n", char_input);
+								fflush(stdout);
+								rows_selected += 1;
+								if(record_size > counter)
+								{
+									int add = record_size - counter;
+									counter += add;
+									position += add;
+									counter += length;
+									position += length;
+									counter = 0;
+								}
+								else
+								{
+									counter += length;
+									position += length;
+									counter = 0;
+								}
+								
+							}
+							else
+							{	
+								printf("|%-16s", char_input);
+								fflush(stdout);
+								counter += length;
+								position += length;
+							}
+						}
+
+					}
+					else
+					{
+						if(column_type[i] == T_INT)
+						{
+							fread(&int_input, sizeof(int), 1, flook);
+
+							if(i == columns-1)
+							{
+								fflush(stdout);
+								printf("|%16d|\n", int_input);
+								rows_selected +=1;
+								if(record_size > counter)
+								{
+									counter += 4;
+									position += 4;
+									int add = record_size - counter;
+									counter += add;
+									position += add;
+									counter = 0;
+								}
+								else
+								{
+									counter += 4;
+									position += 4;
+									counter = 0;
+								}
+								
+							}
+							else
+							{
+								printf("|%16d", int_input);
+								counter += 4;
+								position += 4;
+							}
+						}
+						else if(column_type[i] == T_CHAR)
+						{
+							fread(char_input, length, 1, flook);
+							fflush(stdout);
+							if(i == columns-1)
+							{	
+								printf("|%-16s|\n", char_input);
+								fflush(stdout);
+								rows_selected += 1;
+								if(record_size > counter)
+								{
+									int add = record_size - counter;
+									counter += add;
+									position += add;
+									printf ("counter is %d\n", counter);
+									printf("position is %d\n", position);
+								}
+								else
+								{
+									counter += length;
+									position += length;
+									printf ("counter is %d\n", counter);
+									printf("position is %d\n", position);
+								}
+								
+							}
+							else
+							{	
+								printf("|%-16s", char_input);
+								fflush(stdout);
+								counter += length;
+								position += length;			
+							}
+						}
+					}
+					
+				}
+				else
+				{
+					fflush(stdout);
+					printf("we couldnt find it! after the length counter\n");
+
+				}
+			}
+			else
+			{
+				fflush(stdout);
+				printf("we couldnt find it!\n");
+			}
+		}
+
+		for(i = 0; i < columns; i++)
+		{
+			if(i == (columns-1))
+			{
+				printf("%s\n", end_header);
+			}
+			else
+			{
+				printf("%s", header);
+			}
+		}
+		if(rows_selected == 1)
+		{
+			printf("%d row selected.\n", rows_selected);
+		}
+		else
+		{
+			printf("%d rows selected.\n", rows_selected);
+		}
+	}	
+	return rc;
+}
+
 
 int sem_create_table(token_list *t_list)
 {
