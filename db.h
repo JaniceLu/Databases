@@ -140,13 +140,17 @@ typedef enum s_statement
 {
   INVALID_STATEMENT = -199,	// -199
 	CREATE_TABLE = 100,				// 100
-	DROP_TABLE = 101,								// 101
+	DROP_TABLE = 101	,								// 101
 	LIST_TABLE = 102,								// 102
 	LIST_SCHEMA = 103,							// 103
   INSERT = 104,                   // 104
   DELETE = 105,                   // 105
   UPDATE = 106,                   // 106
-  SELECT = 107                    // 107
+  SELECT = 107,                    // 107
+  SELECT_SPECIFIC = 108,
+  AVERAGE = 109,
+  SUM = 110,
+  COUNT = 111
 } semantic_statement;
 
 /* This enum has a list of all the errors that should be detected
@@ -162,17 +166,24 @@ typedef enum error_return_codes
 	COLUMN_NOT_EXIST = -393,						// -393
 	MAX_COLUMN_EXCEEDED = -392,				// -392
 	INVALID_TYPE_NAME = -391,					// -391
-	INVALID_COLUMN_DEFINITION = - 390,	// -390
+	INVALID_COLUMN_DEFINITION = -390,	// -390
 	INVALID_COLUMN_LENGTH = -389,			// -389
   	INVALID_REPORT_FILE_NAME = -388,		// -388
   /* Must add all the possible errors from I/U/D + SELECT here */
+  	INVALID_AVG_SYNTAX = -387,
+  	INVALID_DELETE_SYNTAX = -386,
+  	INVALID_OPERATOR = -385,
   	INSERT_COLUMN_NUMBER_MISMATCH = -384,
+  	INVALID_COMPARISON_TO_NULL = -383,
+  	INVALID_UPDATE_SYNTAX = -382,
   	NOT_NULL_PARAMETER = -380,
     INPUT_LENGTH_TOO_LONG = -302,
-    INVALID_TYPE_INSERTED = -382,
+    INVALID_TYPE_INSERTED = -301,
 	FILE_OPEN_ERROR = -299,			// -299
 	DBFILE_CORRUPTION = -298,					// -298
-	MEMORY_ERROR = -297							  // -297
+	MEMORY_ERROR = -297,
+	NONINTEGER_COLUMN = -296,
+	INVALID_KEYWORD = -295							  // -297
 } return_codes;
 
 /* Set of function prototypes */
@@ -185,6 +196,12 @@ int sem_list_tables();
 int sem_list_schema(token_list *t_list);
 int sem_insert_into(token_list *t_list);
 int sem_select_all(token_list *t_list);
+int sem_delete_from(token_list *t_list);
+int sem_update_table(token_list *t_list);
+int sem_select(token_list *t_list);
+int sem_average(token_list *t_list);
+int sem_sum(token_list *t_list);
+int sem_count(token_list *t_list);
 int roundUp(int target, int mult);
 
 /*
