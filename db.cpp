@@ -5345,7 +5345,7 @@ int sem_average(token_list *t_list)
 													char *condition1tablechar = (char*)malloc(column_lengths[column_number_where1-1]+1);
 													fread(condition1tablechar, column_lengths[column_number_where1-1], 1, flook);
 													printf("condition 1 to check: %s\n", condition1tablechar);
-													if(strcmp(where1comparisonvalue, condition1tablechar) > 0)
+													if(strcmp(where1comparisonvalue, condition1tablechar) < 0)
 													{
 														if((fseek(flook, position, SEEK_SET)) == 0)
 														{
@@ -10865,7 +10865,7 @@ int sem_sum(token_list *t_list)
 													char *condition1tablechar = (char*)malloc(column_lengths[column_number_where1-1]+1);
 													fread(condition1tablechar, column_lengths[column_number_where1-1], 1, flook);
 													printf("condition 1 to check: %s\n", condition1tablechar);
-													if(strcmp(where1comparisonvalue, condition1tablechar) > 0)
+													if(strcmp(where1comparisonvalue, condition1tablechar) < 0)
 													{
 														if((fseek(flook, position, SEEK_SET)) == 0)
 														{
