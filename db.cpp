@@ -18,7 +18,8 @@
 #if defined(_WIN32) || defined(_WIN64)
   #define strcasecmp _stricmp
 #endif
-
+const int ROLLFORWARD_PENDING = 1;
+extern tpd_list *g_tpd_list;	
 
 int main(int argc, char** argv)
 {
@@ -406,11 +407,23 @@ int do_semantic(token_list *tok_list, char *command)
 		cur_cmd = COUNT;
 		cur = cur->next->next->next;
 	}
-	else if((cur->tok_value == K_BACKUP) && (cur->next != NULL) && (cur->next->tok_value == K_TO))
+	else if((cur->tok_value == K_BACKUP) && (cur->next != NULL) && (cur->next->tok_value == K_TO) && (cur->next->next != NULL))
 	{
 		printf("BACKUP TO statement\n");
 		cur_cmd = BACKUP;
 		cur = cur->next->next; /*to the image file name*/
+	}
+	else if((cur->tok_value == K_RESTORE) && (cur->next != NULL) && (cur->next->tok_value == K_FROM) && (cur->next->next != NULL))
+	{
+		printf("RESTORE FROM statement\n");
+		cur_cmd = RESTORE;
+		cur = cur->next->next;
+	}
+	else if((cur->tok_value == K_ROLLFORWARD))
+	{
+		printf("ROLLFORWARD statement\n");
+		cur_cmd = ROLLFORWARD;
+		cur = cur->next;
 	}
 	else
   	{
@@ -462,11 +475,105 @@ int do_semantic(token_list *tok_list, char *command)
 			case BACKUP:
 						rc = sem_backup(cur, line);
 						break;
+			case RESTORE:
+						rc = sem_restore(cur, line);
+						break;
+			case ROLLFORWARD:
+						rc = sem_rollforward(cur, line);
+						break;
 			default:
 					; /* no action */
 		}
 	}
 	
+	return rc;
+}
+
+int sem_rollforward(token_list *t_list, char *command)
+{
+	token_list *read;
+	token_list *enter;
+	enter = t_list;
+	read = t_list;
+	int rc = 0;
+	if(g_tpd_list->db_flags == ROLLFORWARD_PENDING)
+	{
+		rc = ROLLFORWARD_NOW_PENDING;
+		read->tok_value = INVALID;
+		enter->tok_value = INVALID;
+	}
+	return rc;
+}
+
+int sem_restore(token_list *t_list, char *command)
+{
+	token_list *read;
+	token_list *enter;
+	enter = t_list;
+	read = t_list;
+	int rc = 0;
+	int lengthOfBackup = 0;
+	int numberOfWords = 0;
+	int numberOfSpaces = 0;
+	bool without = false;
+	if(g_tpd_list->db_flags == ROLLFORWARD_PENDING)
+	{
+		rc = ROLLFORWARD_NOW_PENDING;
+		read->tok_value = INVALID;
+		enter->tok_value = INVALID;
+	}
+	while((read->next != NULL) && (!without))
+	{
+		if(read->tok_value == K_WITHOUT)
+		{
+			without = true;
+		}
+		else
+		{
+			lengthOfBackup += strlen(read->tok_string);
+			numberOfSpaces++;
+			numberOfWords++;
+			read = read->next;
+		}
+	}
+	lengthOfBackup += numberOfSpaces;
+	char* FileName = (char*)malloc(lengthOfBackup);
+	char *space = " ";
+	for(int i = 0; i < numberOfWords; i++)
+	{
+		strcat(FileName, enter->tok_string);
+		enter = enter->next;
+		strcat(FileName, space);
+	}
+	printf("Restoring from: %s\n", FileName);
+	if((read->tok_value == K_WITHOUT) && (enter->tok_value == K_WITHOUT))
+	{
+		printf("did it\n");
+	}//without RF
+	else if (read->tok_value == EOC)
+	{
+		FILE *fhandle = NULL;
+		int num_tables = g_tpd_list->num_tables;
+		tpd_entry *cur = &(g_tpd_list->tpd_start);
+		g_tpd_list->db_flags++;
+		if((fhandle = fopen("dbfile.bin", "wbc")) == NULL)
+		{
+			rc = FILE_OPEN_ERROR;
+		}
+	  	else
+		{
+			fwrite(g_tpd_list, g_tpd_list->list_size, 1, fhandle);
+			fflush(fhandle);
+			fclose(fhandle);
+		}
+
+	}//with RF
+	else
+	{
+		rc = INVALID_RESTORE_SYNTAX;
+		enter->tok_value = INVALID;
+		read->tok_value = INVALID;
+	}
 	return rc;
 }
 
@@ -485,6 +592,12 @@ int sem_backup(token_list *t_list, char *command)
 	int fileSize = 0;
 	bool nameNotTaken = false;
 	bool done = false;
+	if(g_tpd_list->db_flags == ROLLFORWARD_PENDING)
+	{
+		rc = ROLLFORWARD_NOW_PENDING;
+		read->tok_value = INVALID;
+		enter->tok_value = INVALID;
+	}
 	while(read->next != NULL)
 	{
 		lengthOfBackup += strlen(read->tok_string);
@@ -5939,11 +6052,14 @@ int sem_create_table(token_list *t_list, char *command)
 	int cur_id = 0;
 	cd_entry	col_entry[MAX_NUM_COL];
 	struct stat file_stat;
-
-	/* void * memset ( void * ptr, int value, size_t num ); 
-	   allocate memory at ptr with value and size_t */
-	memset(&tab_entry, '\0', sizeof(tpd_entry));
 	cur = t_list;
+	if(g_tpd_list->db_flags == ROLLFORWARD_PENDING)
+	{
+		rc = ROLLFORWARD_NOW_PENDING;
+		cur->tok_value = INVALID;
+	}
+	memset(&tab_entry, '\0', sizeof(tpd_entry));
+	
 	if ((cur->tok_class != keyword) &&
 		  (cur->tok_class != identifier) &&
 			(cur->tok_class != type_name))
@@ -11209,6 +11325,13 @@ int sem_insert_into(token_list *t_list, char *command)
 	   allocate memory at ptr with value and size_t */
 	cur = t_list;
 	test = t_list;
+
+	if(g_tpd_list->db_flags == ROLLFORWARD_PENDING)
+	{
+		rc = ROLLFORWARD_NOW_PENDING;
+		cur->tok_value = INVALID;
+		test->tok_value = INVALID;
+	}
 
 	if((tab_entry = get_tpd_from_list(cur->tok_string)) == NULL)
 	{
@@ -16920,8 +17043,15 @@ int sem_drop_table(token_list *t_list, char *command)
 	int rc = 0;
 	token_list *cur;
 	tpd_entry *tab_entry = NULL;
-
+	struct stat file_stat;
 	cur = t_list;
+	printf("flag: %d\n pending: %d\n",g_tpd_list->db_flags, ROLLFORWARD_PENDING);
+	if(g_tpd_list->db_flags == ROLLFORWARD_PENDING)
+	{
+
+		rc = ROLLFORWARD_NOW_PENDING;
+		cur->tok_value = INVALID;
+	}
 	if ((cur->tok_class != keyword) &&
 		  (cur->tok_class != identifier) &&
 			(cur->tok_class != type_name))
@@ -16932,65 +17062,69 @@ int sem_drop_table(token_list *t_list, char *command)
 	}
 	else
 	{
-		if (cur->next->tok_value != EOC)
+		while((!rc))
 		{
-			rc = INVALID_STATEMENT;
-			cur->next->tok_value = INVALID;
-		}
-		else
-		{
-			if ((tab_entry = get_tpd_from_list(cur->tok_string)) == NULL)
+			if (cur->next->tok_value != EOC)
 			{
-				rc = TABLE_NOT_EXIST;
-				cur->tok_value = INVALID;
+				rc = INVALID_STATEMENT;
+				cur->next->tok_value = INVALID;
 			}
 			else
 			{
-				/* Found a valid tpd, drop it from tpd list */
-				printf("table name: %s\n", tab_entry->table_name);
-				char* extensionName = ".tab";
-				char* dropTableName = (char*)malloc(strlen(tab_entry->table_name) + strlen(extensionName) + 1);
-				strcat(dropTableName, tab_entry->table_name);
-				strcat(dropTableName, extensionName);
-				printf("Deleted file name will be: %s\n", dropTableName);
-				if(remove(dropTableName) == 0){
-					printf("Successfully removed file.\n\n");
-				}
-				else{
-					printf("Can't remove. \n");
-					printf("%s \n\n",strerror(errno));
-				}
-				rc = drop_tpd_from_list(cur->tok_string);
-				FILE *flog = NULL;
-				char *changelog = "db.log";
-				if((flog = fopen(changelog, "ab+")) == NULL)
+				if ((tab_entry = get_tpd_from_list(cur->tok_string)) == NULL)
 				{
-					rc = FILE_OPEN_ERROR;
+					rc = TABLE_NOT_EXIST;
 					cur->tok_value = INVALID;
 				}
 				else
 				{
-					char *line = (char*)malloc(strlen(command)+19);
-					char *timeOfDay = (char*)malloc(15);
-					time_t rawtime;
-				  	struct tm * timeinfo;
-				  	time (&rawtime);
-				  	timeinfo = localtime (&rawtime);
-					strftime(timeOfDay,14,"%Y%m%d%I%M%S",timeinfo);
-					strcat(line, timeOfDay);
-					char *space = " ";
-					char *newline = "\n";
-					char *doublequote = "\"";
-					strcat(line, space);
-					strcat(line, doublequote);
-					strcat(line, command);
-					strcat(line, doublequote);
-					strcat(line, newline);
-					printf("%s\n",line);
-					fprintf(flog, "%s\n", line);
+					/* Found a valid tpd, drop it from tpd list */
+					printf("table name: %s\n", tab_entry->table_name);
+					char* extensionName = ".tab";
+					char* dropTableName = (char*)malloc(strlen(tab_entry->table_name) + strlen(extensionName) + 1);
+					strcat(dropTableName, tab_entry->table_name);
+					strcat(dropTableName, extensionName);
+					printf("Deleted file name will be: %s\n", dropTableName);
+					if(remove(dropTableName) == 0){
+						printf("Successfully removed file.\n\n");
+					}
+					else{
+						printf("Can't remove. \n");
+						printf("%s \n\n",strerror(errno));
+					}
+					rc = drop_tpd_from_list(cur->tok_string);
+					FILE *flog = NULL;
+					char *changelog = "db.log";
+					if((flog = fopen(changelog, "ab+")) == NULL)
+					{
+						rc = FILE_OPEN_ERROR;
+						cur->tok_value = INVALID;
+					}
+					else
+					{
+						char *line = (char*)malloc(strlen(command)+19);
+						char *timeOfDay = (char*)malloc(15);
+						time_t rawtime;
+					  	struct tm * timeinfo;
+					  	time (&rawtime);
+					  	timeinfo = localtime (&rawtime);
+						strftime(timeOfDay,14,"%Y%m%d%I%M%S",timeinfo);
+						strcat(line, timeOfDay);
+						char *space = " ";
+						char *newline = "\n";
+						char *doublequote = "\"";
+						strcat(line, space);
+						strcat(line, doublequote);
+						strcat(line, command);
+						strcat(line, doublequote);
+						strcat(line, newline);
+						printf("%s\n",line);
+						fprintf(flog, "%s\n", line);
+					}
 				}
 			}
 		}
+		
 	}
   return rc;
 }
@@ -17231,6 +17365,12 @@ int sem_delete_from(token_list *t_list, char *command)
 	test = t_list; 
 	use = t_list;
 
+	if(g_tpd_list->db_flags == ROLLFORWARD_PENDING)
+	{
+		rc = ROLLFORWARD_NOW_PENDING;
+		test->tok_value = INVALID;
+		use->tok_value = INVALID;
+	}
 	if((tab_entry = get_tpd_from_list(test->tok_string)) == NULL) //checks to see if table exists
 	{
 		rc = TABLE_NOT_EXIST;
@@ -18439,6 +18579,13 @@ int sem_update_table(token_list *t_list, char *command)
 	bool done = false;
 
 	test = t_list; 
+
+	if(g_tpd_list->db_flags == ROLLFORWARD_PENDING)
+	{
+		rc = ROLLFORWARD_NOW_PENDING;
+		test->tok_value = INVALID;
+		done = true;
+	}
 
 	if((tab_entry = get_tpd_from_list(test->tok_string)) == NULL) //checks to see if table exists
 	{
