@@ -531,7 +531,7 @@ int sem_rollforward(token_list *t_list, char *command)
 				std::cout<<line<<std::endl;
 				printf("i value: %d\n", i);
 				whereToStart = i;
-			/*	FILE *fhandle = NULL;
+				FILE *fhandle = NULL;
 				g_tpd_list->db_flags--;
 				if((fhandle = fopen("dbfile.bin", "wbc")) == NULL)
 				{
@@ -542,7 +542,7 @@ int sem_rollforward(token_list *t_list, char *command)
 					fwrite(g_tpd_list, g_tpd_list->list_size, 1, fhandle);
 					fflush(fhandle);
 					fclose(fhandle);
-				}*/
+				}
 				rollforward = true;
 			}
 		}
@@ -603,15 +603,14 @@ int sem_rollforward(token_list *t_list, char *command)
 				while (tok_ptr != NULL)
 				{
 					printf("%16s \t%d \t %d\n",tok_ptr->tok_string, tok_ptr->tok_class, 
-						      tok_ptr->tok_value); 										 //will print out the type of class, the string
-																							//and the value 		      
+						      tok_ptr->tok_value); 											      
 					tok_ptr = tok_ptr->next;
 				}
 		    
 				if (!rc)
 				{
 					printf("got to semantics!\n");
-				//	rc = do_semantic(tok_list, argv[1]);
+					rc = do_semantic(commandTokens, action);
 				}
 
 				if (rc) /* couldn't get the token from the list */
