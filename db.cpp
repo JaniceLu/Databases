@@ -499,11 +499,43 @@ int sem_rollforward(token_list *t_list, char *command)
 	enter = t_list;
 	read = t_list;
 	int rc = 0;
+	bool rollforward = false;
 	if(g_tpd_list->db_flags == ROLLFORWARD_PENDING)
 	{
 		rc = ROLLFORWARD_NOW_PENDING;
 		read->tok_value = INVALID;
 		enter->tok_value = INVALID;
+		rollforward = true;
+	}
+	while(!rollforward)
+	{
+		/*
+			1. look through the file (look at code from sem_restore) to find rf_start
+				1a. if no RF_START, fail the command
+				1b. if there is RF_START, continue
+			2. now check if without timestamp or with timestamp
+				2a. without timestamp (verify correct syntax)
+					3. get rid of rollforward pending
+					4. formulate a loop to iterate through the vector (use the lookingfor logic in sem_restore to get position for i)
+						while i+2 (where the RF_START is) != vector.size()-(i+2)
+							do 5 - 7 
+							iterate variable (that is equal to vector.size()-(i+2)) by one
+					5. parse the command with 
+						String s = "test string (67)";
+						s = s.substring(s.indexOf("(") + 1);
+						s = s.substring(0, s.indexOf(")"));
+					6. send command to get_token (convert string to char* using 
+											std::string str = "string";
+											const char *cstr = str.c_str();)
+						with empty token_list *blah =null; 
+					7. copy lines 49-77 in code (for sending to do_semantic)
+				2b. with timestamp (verify correct syntax)
+					3. get rid of rollforward pending
+					4. parse timestamp and put into string
+					5. a loop to iterate through vector (see without timestamp)
+					6. find timestamp to match, this is the variable from line 522 vector.size()-(i+1)? look at later to see if it is correct
+					7. do 5-7 of without timestamp
+		*/
 	}
 	return rc;
 }
