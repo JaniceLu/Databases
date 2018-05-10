@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <vector>
+#include <algorithm>
 #include <string>
 #include <time.h>
 
@@ -518,85 +519,166 @@ int sem_restore(token_list *t_list, char *command)
 	int numberOfWords = 0;
 	int numberOfSpaces = 0;
 	bool without = false;
+	bool pending = false;
 	if(g_tpd_list->db_flags == ROLLFORWARD_PENDING)
 	{
 		rc = ROLLFORWARD_NOW_PENDING;
 		read->tok_value = INVALID;
 		enter->tok_value = INVALID;
+		pending = true;
 	}
-	while((read->next != NULL) && (!without))
+	while(!pending)
 	{
-		if(read->tok_value == K_WITHOUT)
+		while((read->next != NULL) && (!without))
 		{
-			without = true;
-		}
-		else
-		{
-			lengthOfBackup += strlen(read->tok_string);
-			numberOfSpaces++;
-			numberOfWords++;
-			read = read->next;
-		}
-	}
-	lengthOfBackup += numberOfSpaces;
-	char* FileName = (char*)malloc(lengthOfBackup);
-	char *space = " ";
-	for(int i = 0; i < numberOfWords; i++)
-	{
-		strcat(FileName, enter->tok_string);
-		enter = enter->next;
-		strcat(FileName, space);
-	}
-	printf("Restoring from: %s\n", FileName);
-	if((read->tok_value == K_WITHOUT) && (enter->tok_value == K_WITHOUT))
-	{
-		printf("did it\n");
-	}//without RF
-	else if (read->tok_value == EOC)
-	{
-		FILE *fhandle = NULL;
-		int num_tables = g_tpd_list->num_tables;
-		tpd_entry *cur = &(g_tpd_list->tpd_start);
-		g_tpd_list->db_flags++;
-		if((fhandle = fopen("dbfile.bin", "wbc")) == NULL)
-		{
-			rc = FILE_OPEN_ERROR;
-		}
-	  	else
-		{
-			fwrite(g_tpd_list, g_tpd_list->list_size, 1, fhandle);
-			fflush(fhandle);
-			fclose(fhandle);
-		}
-		std::vector<std::string> vector;
-		std::ifstream in("db.log");
-		std::string str;
-		if(!in)
-		{
-			rc = FILE_OPEN_ERROR;
-		}
-		while(std::getline(in, str))
-		{
-			if(str.size() > 0)
+			if(read->tok_value == K_WITHOUT)
 			{
-				vector.push_back(str);
+				without = true;
+			}
+			else
+			{
+				lengthOfBackup += strlen(read->tok_string);
+				numberOfSpaces++;
+				numberOfWords++;
+				read = read->next;
 			}
 		}
-		in.close();
-		for(std::string &line: vector)
+		lengthOfBackup += numberOfSpaces;
+		char* FileName = (char*)malloc(lengthOfBackup);
+		char *space = " ";
+		for(int i = 0; i < numberOfWords; i++)
 		{
-			std::cout<<line<<std::endl;
+			strcat(FileName, enter->tok_string);
+			enter = enter->next;
 		}
+	//	printf("Restoring from: %s\n", FileName);
+		if((read->tok_value == K_WITHOUT) && (enter->tok_value == K_WITHOUT))
+		{
+			
+			read = read->next;
+			printf("%d\n", read->tok_value);
+			printf("%d\n", read->next->tok_value);
+			if((read->tok_value == K_RF) && read->next->tok_value == EOC)
+			{
+				std::vector<std::string> vector;
+				std::ifstream in("db.log");
+				std::string str;
+				std::string stringFileName(FileName);
+				std::string lookingfor = "\"backup to " + stringFileName + "\"";
+			//	std::cout<<lookingfor<<std::endl;
+				if(!in)
+				{
+					rc = FILE_OPEN_ERROR;
+				}
+				while(std::getline(in, str))
+				{
+					if(str.size() > 0)
+					{
+						vector.push_back(str);
+					}
+				}
+				std::vector<std::string>::iterator whereIsIt;
+				whereIsIt = vector.begin();
+				printf("vector size: %d\n", vector.size());
+				for(int i = 0; i < vector.size(); i++)
+				{
+					std::string line = vector[i];
 
-	}//with RF
-	else
-	{
-		rc = INVALID_RESTORE_SYNTAX;
-		enter->tok_value = INVALID;
-		read->tok_value = INVALID;
+					if(line.find(lookingfor) != std::string::npos)
+					{
+						printf("%d\n", i);
+						while(vector.size() != i+1)
+						{
+							vector.pop_back();
+						}
+						break;
+					}
+				}
+			/*	for(std::string &line: vector)
+				{
+					std::cout<<line<<std::endl;
+				}*/
+				std::ofstream output("temporary.txt");
+				for(int i = 0; i < vector.size(); i++)
+				{
+					output<<vector[i]<<std::endl<<std::endl;
+				}
+				in.close();
+				output.close();
+				remove("db.log");
+				rename("temporary.txt", "db.log");
+				pending = true;
+			}
+		}//without RF
+		else if (read->tok_value == EOC)
+		{
+			FILE *fhandle = NULL;
+			int num_tables = g_tpd_list->num_tables;
+			tpd_entry *cur = &(g_tpd_list->tpd_start);
+			g_tpd_list->db_flags++;
+			if((fhandle = fopen("dbfile.bin", "wbc")) == NULL)
+			{
+				rc = FILE_OPEN_ERROR;
+			}
+		  	else
+			{
+				fwrite(g_tpd_list, g_tpd_list->list_size, 1, fhandle);
+				fflush(fhandle);
+				fclose(fhandle);
+			}
+			std::vector<std::string> vector;
+			std::ifstream in("db.log");
+			std::string str;
+			std::string stringFileName(FileName);
+			std::string lookingfor = "\"backup to " + stringFileName + "\"";
+			const std::string rfStart = "RF_START";
+		//	std::cout<<lookingfor<<std::endl;
+			if(!in)
+			{
+				rc = FILE_OPEN_ERROR;
+			}
+			while(std::getline(in, str))
+			{
+				if(str.size() > 0)
+				{
+					vector.push_back(str);
+				}
+			}
+			std::vector<std::string>::iterator whereIsIt;
+			whereIsIt = vector.begin();
+			for(int i = 0; i < vector.size(); i++)
+			{
+				std::string line = vector[i];
+				if(line.find(lookingfor) != std::string::npos)
+				{
+					whereIsIt = vector.insert(whereIsIt+(i+1), rfStart);
+					break;
+				}
+			}
+
+			std::ofstream output("temporary.txt");
+			for(int i = 0; i < vector.size(); i++)
+			{
+				output<<vector[i]<<std::endl<<std::endl;
+			}
+			in.close();
+			output.close();
+			remove("db.log");
+			rename("temporary.txt", "db.log");
+			pending = true;
+		}//with RF
+		else
+		{
+			rc = INVALID_RESTORE_SYNTAX;
+			enter->tok_value = INVALID;
+			read->tok_value = INVALID;
+			pending = true;
+		}
 	}
+	
 	return rc;
 }
+
 
 int sem_backup(token_list *t_list, char *command)
 {
@@ -17067,9 +17149,10 @@ int sem_drop_table(token_list *t_list, char *command)
 	struct stat file_stat;
 	cur = t_list;
 	printf("flag: %d\n pending: %d\n",g_tpd_list->db_flags, ROLLFORWARD_PENDING);
+	bool done = false;
 	if(g_tpd_list->db_flags == ROLLFORWARD_PENDING)
 	{
-
+		done = true;
 		rc = ROLLFORWARD_NOW_PENDING;
 		cur->tok_value = INVALID;
 	}
@@ -17080,15 +17163,17 @@ int sem_drop_table(token_list *t_list, char *command)
 		// Error
 		rc = INVALID_TABLE_NAME;
 		cur->tok_value = INVALID;
+		done = true;
 	}
 	else
 	{
-		while((!rc))
+		while((!rc) && (!done))
 		{
 			if (cur->next->tok_value != EOC)
 			{
 				rc = INVALID_STATEMENT;
 				cur->next->tok_value = INVALID;
+				done = true;
 			}
 			else
 			{
@@ -17096,6 +17181,7 @@ int sem_drop_table(token_list *t_list, char *command)
 				{
 					rc = TABLE_NOT_EXIST;
 					cur->tok_value = INVALID;
+					done = true;
 				}
 				else
 				{
@@ -17106,10 +17192,12 @@ int sem_drop_table(token_list *t_list, char *command)
 					strcat(dropTableName, tab_entry->table_name);
 					strcat(dropTableName, extensionName);
 					printf("Deleted file name will be: %s\n", dropTableName);
-					if(remove(dropTableName) == 0){
+					if(remove(dropTableName) == 0)
+					{
 						printf("Successfully removed file.\n\n");
 					}
-					else{
+					else
+					{
 						printf("Can't remove. \n");
 						printf("%s \n\n",strerror(errno));
 					}
@@ -17120,6 +17208,7 @@ int sem_drop_table(token_list *t_list, char *command)
 					{
 						rc = FILE_OPEN_ERROR;
 						cur->tok_value = INVALID;
+						done = true;
 					}
 					else
 					{
@@ -17141,11 +17230,11 @@ int sem_drop_table(token_list *t_list, char *command)
 						strcat(line, newline);
 						printf("%s\n",line);
 						fprintf(flog, "%s\n", line);
+						done = true;
 					}
 				}
 			}
 		}
-		
 	}
   return rc;
 }
