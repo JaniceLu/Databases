@@ -494,20 +494,67 @@ int do_semantic(token_list *tok_list, char *command)
 
 int sem_rollforward(token_list *t_list, char *command)
 {
+	std::vector<std::string> vector;
+	int whereToStart = 0;
 	token_list *read;
 	token_list *enter;
 	enter = t_list;
 	read = t_list;
 	int rc = 0;
 	bool rollforward = false;
+	printf("g_tpd_list: %d\nROLLFORWARD_PENDING: %d\n", g_tpd_list->db_flags, ROLLFORWARD_PENDING);
 	if(g_tpd_list->db_flags == ROLLFORWARD_PENDING)
 	{
-		rc = ROLLFORWARD_NOW_PENDING;
+		
+		std::ifstream in("db.log");
+		std::string str;
+		std::string lookingfor = "RF_START";
+	//	std::cout<<lookingfor<<std::endl;
+		if(!in)
+		{
+			rc = FILE_OPEN_ERROR;
+		}
+		while(std::getline(in, str))
+		{
+			if(str.size() > 0)
+			{
+				vector.push_back(str);
+			}
+		}
+		in.close();
+		for(int i = 0; i < vector.size(); i++)
+		{
+			std::string line = vector[i];
+
+			if(line.find(lookingfor) != std::string::npos)
+			{
+				std::cout<<line<<std::endl;
+				printf("i value: %d\n", i);
+				whereToStart = i;
+			/*	FILE *fhandle = NULL;
+				g_tpd_list->db_flags--;
+				if((fhandle = fopen("dbfile.bin", "wbc")) == NULL)
+				{
+					rc = FILE_OPEN_ERROR;
+				}
+			  	else
+				{
+					fwrite(g_tpd_list, g_tpd_list->list_size, 1, fhandle);
+					fflush(fhandle);
+					fclose(fhandle);
+				}*/
+				rollforward = true;
+			}
+		}
+	}
+	else
+	{
+		rc = NO_ROLLFORWARD_FLAG;
 		read->tok_value = INVALID;
 		enter->tok_value = INVALID;
-		rollforward = true;
+		printf("No rollforward flag in g_tpd_list.\n");	
 	}
-	while(!rollforward)
+	while(rollforward)
 	{
 		/*
 			1. look through the file (look at code from sem_restore) to find rf_start
@@ -536,6 +583,76 @@ int sem_rollforward(token_list *t_list, char *command)
 					6. find timestamp to match, this is the variable from line 522 vector.size()-(i+1)? look at later to see if it is correct
 					7. do 5-7 of without timestamp
 		*/
+		printf("found rollward flag! this is current token: %s\nand the next token is: %s\n", read->tok_string, read->next->tok_string);
+		if(read->tok_value == EOC)
+		{
+			for(int i = whereToStart+1; i < vector.size(); i++)
+			{
+				token_list *commandTokens = NULL;
+				token_list *tok_ptr = NULL;
+				token_list *tmp_tok_ptr = NULL;
+				std::string line = vector[i];
+				std::size_t pos = line.find("\"");
+				line = line.substr(pos+1);
+				line.pop_back();
+				char* action= new char[line.length()+1];
+				std::strcpy(action, line.c_str());
+				printf("command to use: %s\n", action);
+				get_token(action, &commandTokens);
+				tok_ptr = commandTokens;
+				while (tok_ptr != NULL)
+				{
+					printf("%16s \t%d \t %d\n",tok_ptr->tok_string, tok_ptr->tok_class, 
+						      tok_ptr->tok_value); 										 //will print out the type of class, the string
+																							//and the value 		      
+					tok_ptr = tok_ptr->next;
+				}
+		    
+				if (!rc)
+				{
+					printf("got to semantics!\n");
+				//	rc = do_semantic(tok_list, argv[1]);
+				}
+
+				if (rc) /* couldn't get the token from the list */
+				{
+					tok_ptr = commandTokens;
+					while (tok_ptr != NULL)
+					{
+						if ((tok_ptr->tok_class == error) ||
+							  (tok_ptr->tok_value == INVALID))
+						{
+							printf("\nError in the string: %s\n", tok_ptr->tok_string);
+							printf("rc=%d\n", rc);
+							break;
+						}
+						tok_ptr = tok_ptr->next;
+					}
+				}
+
+		    /* Whether the token list is valid or not, we need to free the memory */
+				tok_ptr = commandTokens;
+				while (tok_ptr != NULL)
+				{
+		      		tmp_tok_ptr = tok_ptr->next;
+		      		free(tok_ptr);
+		      		tok_ptr=tmp_tok_ptr;
+				}
+			}
+					rollforward = false;
+		}
+		else if((read->tok_value == K_TO) && (read->next != NULL) && (read->next->tok_value == INT_LITERAL))
+		{
+			rollforward = false;
+		}
+		else
+		{
+			rc = INVALID_ROLLFORWARD_SYNTAX;
+			read->tok_value = INVALID;
+			enter->tok_value = INVALID;
+			rollforward = false;
+	    }
+		
 	}
 	return rc;
 }
