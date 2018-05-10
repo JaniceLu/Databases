@@ -104,10 +104,16 @@ typedef enum t_value
   K_AND = 35,        // 35 - 23 in hex (and)
   K_OR = 36,         // 36 - new keyword should be added below this line
   				// represents 24 in hex (or)
-  F_SUM = 37,        // 37 - 25 in hex (sum)
-  F_AVG = 38,        // 38 - 26 in hex (avg)
-	F_COUNT = 39,      // 39 - new function name should be added below this line
-				//represents 27 in hex (count)
+  K_BACKUP = 37,	//37 - 25 in hex (backup)
+  F_SUM = 38,        // 38 - 26 in hex (sum)
+  F_AVG = 39,        // 39 - 27 in hex (avg)
+	F_COUNT = 40,      // 40 - new function name should be added below this line
+				//represents 28 in hex (count)
+	K_RESTORE = 41, // 41 - 29 in hex (restore)
+	K_ROLLFORWARD = 42,
+	K_WITHOUT = 43,
+	K_RF = 44,
+
 	S_LEFT_PAREN = 70,  // 70 - 46 in hex ('(')
 	S_RIGHT_PAREN = 71,		  // 71 - 47 in hex (')')
 	S_COMMA = 72,			      // 72 - 48 in hex (',')
@@ -123,7 +129,7 @@ typedef enum t_value
 } token_value;
 
 /* This constants must be updated when add new keywords */
-#define TOTAL_KEYWORDS_PLUS_TYPE_NAMES 30
+#define TOTAL_KEYWORDS_PLUS_TYPE_NAMES 35
 
 /* New keyword must be added in the same position/order as the enum
    definition above, otherwise the lookup will be wrong */
@@ -131,8 +137,8 @@ char *keyword_table[] =
 {
   "int", "char", "varchar", "create", "table", "not", "null", "drop", "list", "schema",
   "for", "to", "insert", "into", "values", "delete", "from", "where", 
-  "update", "set", "select", "order", "by", "desc", "is", "and", "or",
-  "sum", "avg", "count"
+  "update", "set", "select", "order", "by", "desc", "is", "and", "or", "backup",
+  "sum", "avg", "count", "restore", "rollforward", "without", "rf"
 };
 
 /* This enum defines a set of possible statements */
@@ -150,7 +156,10 @@ typedef enum s_statement
   SELECT_SPECIFIC = 108,
   AVERAGE = 109,
   SUM = 110,
-  COUNT = 111
+  COUNT = 111,
+  BACKUP = 112,
+  RESTORE = 113,
+  ROLLFORWARD = 114
 } semantic_statement;
 
 /* This enum has a list of all the errors that should be detected
@@ -183,25 +192,32 @@ typedef enum error_return_codes
 	DBFILE_CORRUPTION = -298,					// -298
 	MEMORY_ERROR = -297,
 	NONINTEGER_COLUMN = -296,
-	INVALID_KEYWORD = -295							  // -297
+	INVALID_KEYWORD = -295,
+	INVALID_RESTORE_SYNTAX = -294,
+	ROLLFORWARD_NOW_PENDING = -293,
+	NO_ROLLFORWARD_FLAG = -292,
+	INVALID_ROLLFORWARD_SYNTAX = -291
 } return_codes;
 
 /* Set of function prototypes */
 int get_token(char *command, token_list **tok_list);
 void add_to_list(token_list **tok_list, char *tmp, int t_class, int t_value);
-int do_semantic(token_list *tok_list);
-int sem_create_table(token_list *t_list);
-int sem_drop_table(token_list *t_list);
-int sem_list_tables();
-int sem_list_schema(token_list *t_list);
-int sem_insert_into(token_list *t_list);
-int sem_select_all(token_list *t_list);
-int sem_delete_from(token_list *t_list);
-int sem_update_table(token_list *t_list);
-int sem_select(token_list *t_list);
-int sem_average(token_list *t_list);
-int sem_sum(token_list *t_list);
-int sem_count(token_list *t_list);
+int do_semantic(token_list *tok_list, char *command);
+int sem_create_table(token_list *t_list,  char *commandt);
+int sem_drop_table(token_list *t_list,  char *command);
+int sem_list_tables(char *command);
+int sem_list_schema(token_list *t_list,  char *command);
+int sem_insert_into(token_list *t_list,  char *command);
+int sem_select_all(token_list *t_list,  char *command);
+int sem_delete_from(token_list *t_list,  char *command);
+int sem_update_table(token_list *t_list,  char *command);
+int sem_select(token_list *t_list,  char *command);
+int sem_average(token_list *t_list,  char *command);
+int sem_sum(token_list *t_list,  char *command);
+int sem_count(token_list *t_list,  char *command);
+int sem_backup(token_list *t_list, char *command);
+int sem_restore(token_list *t_list, char *command);
+int sem_rollforward(token_list *t_list, char *command);
 int roundUp(int target, int mult);
 
 /*
