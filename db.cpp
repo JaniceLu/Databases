@@ -17572,24 +17572,15 @@ int sem_delete_from(token_list *t_list, char *command)
 									}
 									else
 									{
-										int position = 0;
-										if(columns == column_number)
-										{
-											position = offset+1;
-										}
-										else
-										{
-											position = offset;
-										}
-								//		printf("position: %d\n", position);
 										int input_length = 0;
 										int counter = 0;
 										
 										char *line_input = NULL;
 										char *check_input = NULL;
-
-
-										for(i = 0; i < column_number; i++)
+										int position = 0;
+										position = offset+1;
+										
+										for(i = 0; i < column_number-1; i++)
 										{
 											if(column_number == 1)
 											{
@@ -17598,10 +17589,7 @@ int sem_delete_from(token_list *t_list, char *command)
 											}
 											else
 											{
-									//			printf("column_lengths[%d]: %d\n", i, column_lengths[i]);
-											//	printf("position is: %d\n", position);
-												position += column_lengths[i];
-									//			printf("position now is: %d\n", position);
+												position += column_lengths[i]+1;
 											}
 										}
 										int int_input = 0;
@@ -17869,22 +17857,16 @@ int sem_delete_from(token_list *t_list, char *command)
 									}
 									else
 									{
-										int position = 0;
-										if(columns == column_number)
-										{
-											position = offset+1;
-										}
-										else
-										{
-											position = offset;
-										}
+										
 										int input_length = 0;
 										int counter = 0;
 										char *char_input = NULL;
 										char *line_input = NULL;
 										char *check_input = NULL;
-
-										for(i = 0; i < column_number; i++)
+										int position = 0;
+										position = offset+1;
+										
+										for(i = 0; i < column_number-1; i++)
 										{
 											if(column_number == 1)
 											{
@@ -17893,7 +17875,7 @@ int sem_delete_from(token_list *t_list, char *command)
 											}
 											else
 											{
-												position += column_lengths[i];
+												position += column_lengths[i]+1;
 											}
 										}
 										char_input = (char*)malloc(column_lengths[column_number-1]);
@@ -18182,16 +18164,6 @@ int sem_delete_from(token_list *t_list, char *command)
 									}
 									else
 									{
-										int position = 0;
-										if(columns == column_number)
-										{
-											position = offset+1;
-										}
-										else
-										{
-											position = offset;
-										}
-									//	printf("position: %d\n", position);
 										int input_length = 0;
 										int counter = 0;
 										
@@ -18199,7 +18171,10 @@ int sem_delete_from(token_list *t_list, char *command)
 										char *check_input = NULL;
 
 
-										for(i = 0; i < column_number; i++)
+										int position = 0;
+										position = offset+1;
+										
+										for(i = 0; i < column_number-1; i++)
 										{
 											if(column_number == 1)
 											{
@@ -18208,10 +18183,7 @@ int sem_delete_from(token_list *t_list, char *command)
 											}
 											else
 											{
-											//	printf("column_lengths[%d]: %d\n", i, column_lengths[i]);
-											//	printf("position is: %d\n", position);
-												position += column_lengths[i];
-											//	printf("position now is: %d\n", position);
+												position += column_lengths[i]+1;
 											}
 										}
 										int int_input = 0;
@@ -18366,13 +18338,15 @@ int sem_delete_from(token_list *t_list, char *command)
 									}
 									else
 									{
-										int position = offset;
+										
 										int input_length = 0;
 										int counter = 0;
 										char *char_input = NULL;
 										char *line_input = NULL;
-
-										for(i = 0; i < column_number; i++)
+										int position = 0;
+										position = offset+1;
+										
+										for(i = 0; i < column_number-1; i++)
 										{
 											if(column_number == 1)
 											{
@@ -18381,9 +18355,7 @@ int sem_delete_from(token_list *t_list, char *command)
 											}
 											else
 											{
-									//			printf("column_lengths[%d]: %d\n", i, column_lengths[i]);
-												position += column_lengths[i-1]+1;
-									//			printf("position is: %d\n", position);
+												position += column_lengths[i]+1;
 											}
 										}
 										char_input = (char*)malloc(column_lengths[column_number-1]);
@@ -18743,16 +18715,9 @@ int sem_update_table(token_list *t_list, char *command)
 							int table_input = 0;
 							int rows = 0;
 							int position = 0;
-							if(columns == column_number)
-							{
-								position = offset+1;
-							}
-							else
-							{
-								position = offset;
-							}
-
-							for(i = 0; i < column_number; i++)
+							position = offset+1;
+										
+							for(i = 0; i < column_number-1; i++)
 							{
 								if(column_number == 1)
 								{
@@ -18761,10 +18726,10 @@ int sem_update_table(token_list *t_list, char *command)
 								}
 								else
 								{
-									position += column_lengths[i];
+									position += column_lengths[i]+1;
 								}
 							}
-
+							
 							for(i = 0; i < rows_inserted; i++)
 							{
 								if((fseek(fchange, position, SEEK_SET)) == 0)
@@ -18879,10 +18844,10 @@ int sem_update_table(token_list *t_list, char *command)
 																}
 																else
 																{
-																	position_where += column_lengths[i]+!;
+																	position_where += column_lengths[i]+1;
 																}
 															}
-															
+
 															for(i = 0; i < rows_inserted; i++)
 															{
 																if((fseek(fchange, position_where, SEEK_SET)) == 0)
@@ -18928,7 +18893,7 @@ int sem_update_table(token_list *t_list, char *command)
 																}
 																else
 																{
-																	position_where += column_lengths[i]+!;
+																	position_where += column_lengths[i]+1;
 																}
 															}
 
@@ -18975,7 +18940,7 @@ int sem_update_table(token_list *t_list, char *command)
 																}
 																else
 																{
-																	position_where += column_lengths[i]+!;
+																	position_where += column_lengths[i]+1;
 																}
 															}
 
@@ -19024,7 +18989,7 @@ int sem_update_table(token_list *t_list, char *command)
 																}
 																else
 																{
-																	position_where += column_lengths[i]+!;
+																	position_where += column_lengths[i]+1;
 																}
 															}
 
@@ -19071,7 +19036,7 @@ int sem_update_table(token_list *t_list, char *command)
 																}
 																else
 																{
-																	position_where += column_lengths[i]+!;
+																	position_where += column_lengths[i]+1;
 																}
 															}
 
@@ -19119,7 +19084,7 @@ int sem_update_table(token_list *t_list, char *command)
 																}
 																else
 																{
-																	position_where += column_lengths[i]+!;
+																	position_where += column_lengths[i]+1;
 																}
 															}
 
@@ -19243,7 +19208,7 @@ int sem_update_table(token_list *t_list, char *command)
 								}
 								else
 								{
-									position += column_lengths[i];
+									position += column_lengths[i]+1;
 								}
 							}
 							printf("position: %d\n", position);
@@ -19355,7 +19320,7 @@ int sem_update_table(token_list *t_list, char *command)
 																}
 																else
 																{
-																	position_where += column_lengths[i]+!;
+																	position_where += column_lengths[i]+1;
 																}
 															}
 
@@ -19404,7 +19369,7 @@ int sem_update_table(token_list *t_list, char *command)
 																}
 																else
 																{
-																	position_where += column_lengths[i]+!;
+																	position_where += column_lengths[i]+1;
 																}
 															}
 
@@ -19451,7 +19416,7 @@ int sem_update_table(token_list *t_list, char *command)
 																}
 																else
 																{
-																	position_where += column_lengths[i]+!;
+																	position_where += column_lengths[i]+1;
 																}
 															}
 
@@ -19500,7 +19465,7 @@ int sem_update_table(token_list *t_list, char *command)
 																}
 																else
 																{
-																	position_where += column_lengths[i]+!;
+																	position_where += column_lengths[i]+1;
 																}
 															}
 
@@ -19547,7 +19512,7 @@ int sem_update_table(token_list *t_list, char *command)
 																}
 																else
 																{
-																	position_where += column_lengths[i]+!;
+																	position_where += column_lengths[i]+1;
 																}
 															}
 
@@ -19595,7 +19560,7 @@ int sem_update_table(token_list *t_list, char *command)
 																}
 																else
 																{
-																	position_where += column_lengths[i]+!;
+																	position_where += column_lengths[i]+1;
 																}
 															}
 
@@ -19704,16 +19669,9 @@ int sem_update_table(token_list *t_list, char *command)
 							char *table_input = NULL;
 							int rows = 0;
 							int position = 0;
-							if(columns == column_number)
-							{
-								position = offset+1;
-							}
-							else
-							{
-								position = offset;
-							}
-
-							for(i = 0; i < column_number; i++)
+							position = offset+1;
+							
+							for(i = 0; i < column_number-1; i++)
 							{
 								if(column_number == 1)
 								{
@@ -19722,7 +19680,7 @@ int sem_update_table(token_list *t_list, char *command)
 								}
 								else
 								{
-									position += column_lengths[i];
+									position += column_lengths[i]+1;
 								}
 							}
 							
