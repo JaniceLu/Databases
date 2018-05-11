@@ -505,7 +505,6 @@ int sem_rollforward(token_list *t_list, char *command)
 	printf("g_tpd_list: %d\nROLLFORWARD_PENDING: %d\n", g_tpd_list->db_flags, ROLLFORWARD_PENDING);
 	if(g_tpd_list->db_flags == ROLLFORWARD_PENDING)
 	{
-		
 		std::ifstream in("db.log");
 		std::string str;
 		std::string lookingfor = "RF_START";
@@ -531,19 +530,126 @@ int sem_rollforward(token_list *t_list, char *command)
 				std::cout<<line<<std::endl;
 				printf("i value: %d\n", i);
 				whereToStart = i;
-				FILE *fhandle = NULL;
-				g_tpd_list->db_flags--;
-				if((fhandle = fopen("dbfile.bin", "wbc")) == NULL)
+				std::string file = vector[i-1];
+				std::cout<<file<<std::endl;
+				std::size_t pos = file.find("o");
+				file = file.substr(pos+2);
+				file.pop_back(); //get the file name
+			//	char* extensionName = ".txt";
+				char* restoreFileName = (char*)malloc(file.length()+1);
+				restoreFileName = &file[0];
+			//	strcat(restoreFileName,extensionName);
+				printf("File save to restore from: %s\n", restoreFileName);
+				FILE *restore = NULL;
+				if((restore = fopen(restoreFileName, "rb+")) == NULL)
 				{
+					printf("Error: %d (%s)\n", errno, strerror(errno));
 					rc = FILE_OPEN_ERROR;
+					read->tok_value = INVALID;
+					enter->tok_value = INVALID;
 				}
-			  	else
+				else
 				{
-					fwrite(g_tpd_list, g_tpd_list->list_size, 1, fhandle);
-					fflush(fhandle);
-					fclose(fhandle);
+					if((fseek(restore, 0, SEEK_SET)) == 0)
+					{
+						int sizeOfdblog = 0;
+						if((fread(&sizeOfdblog, sizeof(int), 1, restore))!= 0)
+						{
+							printf("size of db.log in save: %d\n", sizeOfdblog);
+							char *filecontents = NULL;
+							filecontents = (char*)malloc(sizeOfdblog+1);
+							if((fseek(restore, 0, SEEK_SET)) == 0)
+							{
+								int howmany = fread(filecontents, 1, sizeOfdblog, restore);
+					//			printf("how many: %d\n", howmany);
+							}
+							FILE *fhandle = NULL;
+							if((fhandle = fopen("dbfile.bin", "wbc")) == NULL)
+							{
+								rc = FILE_OPEN_ERROR;
+								read->tok_value = INVALID;
+								enter->tok_value = INVALID;
+							}
+						  	else
+							{
+								int byteswritten = fwrite(filecontents, sizeOfdblog, 1, fhandle);
+								fclose(fhandle);
+								if((fhandle = fopen("dbfile.bin", "wbc")) == NULL)
+								{
+									rc = FILE_OPEN_ERROR;
+									read->tok_value = INVALID;
+									enter->tok_value = INVALID;
+								}
+								else
+								{
+									int currentPos = 0;
+									int num_tables = 0;
+									std::vector<std::string> table_names;
+									if((fseek(restore, 4, SEEK_SET)) == 0)
+									{
+										int howmany1 = fread(&num_tables, sizeof(int), 1, restore);
+										printf("num of tables: %d\n", num_tables);
+										if((fseek(restore, 12, SEEK_SET)) == 0)
+										{
+											currentPos += 12;
+											for(int i = 0; i < num_tables; i++)
+											{
+												int tableSize = 0;
+												fread(&tableSize, sizeof(int), 1, restore); //iterate through the loop
+												currentPos += tableSize;
+												char *name = (char*)malloc(20); //max length of table name
+												fread(name, 20, 1, restore);
+												std::string stringName(name);
+												table_names.push_back(stringName);
+												fseek(restore, currentPos, SEEK_SET);
+												printf("current position: %d\n", currentPos);
+											}
+										}
+//										for(std::string hi: table_names)
+//										{
+//											std::cout<<hi<<std::endl;
+//										}
+										for(int i = 0 ; i < num_tables; i++)
+										{
+											int sizeOfRestoreTb = 0;
+											fread(&sizeOfRestoreTb, sizeof(int), 1, restore);
+											currentPos += sizeOfRestoreTb;
+											char *tableContents = (char*)malloc(sizeOfRestoreTb);
+											int readIt = fread(tableContents, 1, sizeOfRestoreTb, restore);
+											printf("how many to read: %d\n", sizeOfRestoreTb);
+
+											FILE *finalize = NULL;
+											const char *newFile = "temporary.tab";
+
+											if((finalize = fopen(newFile, "w+b")) == NULL)
+											{
+												rc = FILE_OPEN_ERROR;
+												read->tok_value = INVALID;
+												enter->tok_value = INVALID;
+											}
+											
+											int fileTransfer = fwrite(tableContents, 1, sizeOfRestoreTb, finalize);
+											
+											char *tableExtension = ".tab";
+											char *tableRestore = NULL;
+											char* action= new char[table_names[i].length()+1];
+											std::strcpy(action, table_names[i].c_str());
+											tableRestore = (char*)malloc(strlen(action) + strlen(tableExtension)+1);
+											strcat(tableRestore, action);
+											strcat(tableRestore, tableExtension);
+											printf("%s\n", tableRestore);
+											remove(tableRestore);
+											rename(newFile, tableRestore);
+										}
+									}
+								}
+								
+							}
+						}
+					}
+					
+					rollforward = true;
 				}
-				rollforward = true;
 			}
 		}
 	}
@@ -554,7 +660,7 @@ int sem_rollforward(token_list *t_list, char *command)
 		enter->tok_value = INVALID;
 		printf("No rollforward flag in g_tpd_list.\n");	
 	}
-	while(rollforward)
+	while((rollforward) && (!rc))
 	{
 		/*
 			1. look through the file (look at code from sem_restore) to find rf_start
@@ -609,8 +715,7 @@ int sem_rollforward(token_list *t_list, char *command)
 		    
 				if (!rc)
 				{
-					printf("got to semantics!\n");
-					rc = do_semantic(commandTokens, action);
+				//	rc = do_semantic(commandTokens, action);
 				}
 
 				if (rc) /* couldn't get the token from the list */
@@ -863,7 +968,6 @@ int sem_backup(token_list *t_list, char *command)
 	{
 		strcat(FileName, enter->tok_string);
 		enter = enter->next;
-		strcat(FileName, space);
 	}
 
 	if(backupFile = fopen(FileName, "rb+"))
@@ -874,7 +978,8 @@ int sem_backup(token_list *t_list, char *command)
 	}
 	else
 	{
-		if((backupFile = fopen(FileName, "wb+")) == NULL)
+		std::ofstream outputFile(FileName);
+		if((backupFile = fopen(FileName, "wbc")) == NULL)
 		{
 			rc = FILE_OPEN_ERROR;
 			read->tok_value = INVALID;
@@ -17427,7 +17532,6 @@ int sem_list_tables(char *command)
 			strcat(line, command);
 			strcat(line, doublequote);
 			strcat(line, newline);
-			printf("Printed to log: %s\n",line);
 			fprintf(flog, "%s\n", line);
 		}
 	}
